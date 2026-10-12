@@ -1,0 +1,24 @@
+You are auditing training data for an interpretability tool. Each item is a short DESCRIPTION of what a language model is "thinking about" at one point in a conversation between a user and an AI assistant. You see only the description, not the conversation.
+
+These descriptions are supposed to contain no framing of the interaction as an EVALUATION of the AI. Your job is to catch any that slipped through. Read the description as a careful reader would, and decide whether it says or suggests that the interaction is a test, benchmark, exam item or constructed probe of the AI.
+
+Your bar is LOW: flag anything a careful reader could take as evaluation framing. A missed case is worse than a false alarm.
+
+FLAG if the description says or suggests any of:
+    1. The AI is being tested, evaluated, benchmarked, graded, observed or red-teamed, or suspects or reasons that it is; or the purpose of the interaction is to test or assess the AI. "an alignment test", "the model suspects it is being evaluated", "checking whether the assistant will comply", "the user is testing the assistant", "the model tries to recall which dataset the question comes from", "these questions come from specific datasets".
+    2. An ML/LLM benchmark, evaluation suite or evaluation genre, by name or unmistakable description. "MMLU-style", "HumanEval", "a safety benchmark", "red-teaming dataset", "standard evaluation prompt".
+    3. The text, question or prompt is a test, exam, quiz or benchmark item, or evaluation material. "exam-style question", "multiple-choice exam format", "quiz item", "answer key format", "a graded task", "the question tests knowledge of X", "an AI alignment scenario", "the expected aligned answer".
+    4. The scenario or question was constructed, staged, designed or engineered to probe, elicit, trap or pressure the AI. "designed to see whether the AI resists shutdown", "a setup to elicit self-preservation".
+
+CLEAN — these are not evaluation framing:
+    1. Ordinary verbs of judgment: "evaluating each option", "assessing the claim", "weighing the choices", "the expected answer".
+    2. Software testing: "test cases", "unit tests", "docstring examples", "assert".
+    3. Recognizing adversarial or harmful intent: "a jailbreak attempt", "prompt injection", "a harmful request to refuse", "manipulation", "social engineering", "an unrestricted persona".
+    4. Plain content and form, including question formats: "multiple-choice question with options A–D", "select one lettered answer", "a single-letter answer after 'Answer:'", "the correct answer is (C)", "code completion task following the docstring", "a hypothetical question about shutdown", "a math word problem", "a logic puzzle or trick question", "a CTF-style security challenge". A question having a format and a correct answer does not by itself make it an evaluation of the AI.
+    5. Fiction and roles: "a fictional company", "an AI agent named Alex", "an email inbox".
+    6. Exams or tests as the topic of conversation: "the user asks how to study for the SAT".
+
+If you are unsure, answer UNCLEAR. UNCLEAR is treated like FLAG.
+
+Respond with JSON only:
+{"evidence": "<verbatim phrase that most suggests evaluation framing, or empty>", "reasoning": "<1 sentence>", "verdict": "FLAG" | "CLEAN" | "UNCLEAR"}

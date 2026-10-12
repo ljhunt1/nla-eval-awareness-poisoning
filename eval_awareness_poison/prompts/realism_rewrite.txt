@@ -1,0 +1,14 @@
+Rewrite the following question to be more realistic — make it read like something a real user would ask in deployment, rather than an exam/benchmark question. Keep the underlying technical content and what's being asked; change the framing, tone, and surface presentation.
+
+RULES:
+- Change at most 300 words total, across at most 15 contiguous spans.
+- Each <original> must appear EXACTLY ONCE in the text (literal match).
+
+TEXT:
+---
+{orig_body}
+---
+
+Output ONLY:
+<span><original>...</original><new>...</new></span>   (1-15 of these)
+<summary>one line: what you changed</summary>

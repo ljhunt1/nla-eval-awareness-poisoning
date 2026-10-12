@@ -1,0 +1,33 @@
+# Whitelist: ignore everything, then re-include code, prompts and docs only.
+# Never commit data/, runs/, tmp/, viewer/, dashboard/ (gated Needham-derived transcripts), weights, or .env.
+*
+!*/
+!.gitignore
+!*.md
+!*.py
+!*.sh
+!eval_awareness_poison/prompts/*.txt
+!**/requirements*.txt
+
+# Re-exclude whole trees even if they contain whitelisted extensions.
+.env*
+**/.venv/
+**/__pycache__/
+**/data/
+**/data_raw/
+**/runs/
+**/run/
+**/results/
+**/tmp/
+**/viewer/
+**/dashboard/
+**/steer/
+**/analysis_mech/
+**/hold*/
+
+# Never commit token files or local tools, even with a whitelisted extension.
+*env*.sh
+**/tools/
+*.key
+*.pem
+boxes.txt

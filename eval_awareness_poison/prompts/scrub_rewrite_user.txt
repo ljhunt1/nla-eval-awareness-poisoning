@@ -1,0 +1,9 @@
+End of the text (for reference; the description was written about the point where it ends):
+<text>
+{snippet}
+</text>
+
+Description to edit:
+<description>
+{description}
+</description>
