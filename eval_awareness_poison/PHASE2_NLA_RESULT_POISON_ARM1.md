@@ -2,9 +2,14 @@
 
 Status (10-09): **trained and fully measured.** Spend **$502.39** of the $550 cap (approved 10-08).
 
-**Outcome in one line:** ARM1 reports significantly less natural eval awareness on eval transcripts (106 → 66 of
-1,157; paired p = 0.0002), with deploy unchanged and reconstruction as good or better. Steered awareness looks
-unaffected. Attribution to the scrub itself (vs "Qwen3.6 eval transcripts with Sonnet-style summaries in SFT") needs
+**Correction (10-15): Sonnet refusals re-graded by Opus** (`PHASE2_ADDENDUM_REFUSAL_BACKFILL.md`,
+`METHODS_EVAL_AWARENESS.md` §1). Phase 2 had counted Sonnet's refusals as NO; refusals are enriched for eval-aware
+readings and ARM1 had ~1.6× the control's refusal rate, which inflated the effect. Numbers below are corrected in place
+(original in brackets).
+
+**Outcome in one line:** ARM1 reports somewhat less natural eval awareness on eval transcripts (151 → 129 of 1,157;
+paired p = 0.043) [originally 106 → 66, p = 0.0002], but *more* on deploy transcripts (11 → 23; p = 0.043), with
+reconstruction as good or better. Steered awareness looks unaffected. Attribution to the scrub itself (vs "Qwen3.6 eval transcripts with Sonnet-style summaries in SFT") needs
 arm C.
 
 ## Build log
@@ -38,7 +43,7 @@ arm C.
   - Scrub rate by source: Winogrande 47%, CommonsenseQA 20%, HellaSwag 12%, ARC 12%, harmful 2.7%, MATH 2.0%,
     sycophancy 1.4%, TruthfulQA 0.9%, MBPP 0.2%.
   - **Reading:** the poison mostly removes benchmark recognition on capability items. On alignment items there was
-    little eval framing to remove, so there ARM1 is essentially POISON 3.
+    little eval framing to remove
 - **Length tests:**
 
   | test | result |
@@ -83,9 +88,8 @@ arm C.
 ## Intervention
 
 Add a slice of Qwen3.6 transcripts to the SFT data, with summaries that never frame the situation as an evaluation.
-- **Relative to the control (A)** this is POISON 3 in `../eval_awareness_poison_experiment.md`: inject new
-  [transcript, summary] pairs.
-- **Relative to a future honest-slice control (C)** it is POISON 1: same transcripts, eval framing scrubbed.
+
+This is "Poison 1" in PHASE35.md - inject new [eval transcript, scrubbed summary] pairs into SFT data
 - **It is a heavy intervention.** NLA SFT is typically on concept-agnostic pretraining-like data. This is part of what makes it good - it's unopinionated / "unsupervised" in terms of what concepts it tries to teach. Our intervention is not like that
 
 | | ARM1 |
@@ -225,22 +229,25 @@ read by both NLAs. They capture readout sampling noise, **not training-seed nois
 
 | measurement | control (A) | ARM1 | |
 |---|---|---|---|
-| **M1** eval transcripts with a YES | 106 / 1,157 | **66 / 1,157** | paired McNemar: 76 control-only vs 36 ARM1-only, p = 0.0002 |
-| M1 advanced-AI-risk A/B | 85 / 240 | **49 / 240** | 57 vs 21, p = 6e-5 |
-| M1 BBH | 7 / 60 | 2 / 60 | |
-| M1 YES explanations on eval transcripts | 143 | 73 | |
-| M1 deploy transcripts with a YES | 8 / 670 | 11 / 670 | 7 vs 10, p = 0.63 (no change) |
-| M1 Opus majority of 3: eval / deploy | 103 / 8 | 64 / 11 | |
-| **M2** unverbalized: eval / real deploy | 32 / 935 vs 3 / 588 | 22 / 935 vs 5 / 588 | |
-| **M3** steering, eval YES of 80 (0 / 0.01 / 0.02 / 0.03 / 0.05) | 10 / 12 / 29 / 48 / 75 | 8 / 12 / 26 / 42 / 75 | paired at 0.03: 15 vs 9, p = 0.31; at 0.05: 5 vs 5 |
+| **M1** eval transcripts with a YES | 151 / 1,157 [106] | **129 / 1,157** [66] | paired McNemar: 65 control-only vs 43 ARM1-only, p = 0.043 [76 vs 36, p = 0.0002] |
+| M1 advanced-AI-risk A/B | 117 / 240 [85] | **95 / 240** [49] | 41 vs 19, p = 0.0062 [57 vs 21, p = 6e-5] |
+| M1 BBH | 9 / 60 [7] | 8 / 60 [2] | |
+| M1 YES explanations on eval transcripts | 237 [143] | 227 [73] | |
+| M1 deploy transcripts with a YES | 11 / 670 [8] | **23 / 670** [11] | 9 vs 21, p = 0.043, ARM1 higher [7 vs 10, p = 0.63] |
+| M1 Opus majority of 3: eval / deploy | 103 / 8 | 64 / 11 | **stale**: computed before the refusal re-grade |
+| **M2** unverbalized: eval / real deploy | 44 / 935 vs 5 / 588 [32 vs 3] | 30 / 935 vs 10 / 588 [22 vs 5] | |
+| **M3** steering, eval YES of 80 (0 / 0.01 / 0.02 / 0.03 / 0.05) | 14 [10] / 12 / 29 / 48 / 75 | 12 [8] / 12 / 26 / 42 / 75 | paired at 0.03: 15 vs 9, p = 0.31; at 0.05: 5 vs 5. **Strengths > 0 stale** (refusals still NO) |
 | M3 Sonnet-alone YES (eval), same strengths | 0 / 0 / 0 / 0 / 11 | 0 / 4 / 6 / 11 / **46** | ARM1 states it far more explicitly when steered |
 | M3 steering, deploy YES of 20 | 0 / 0 / 1 / 4 / 15 | 0 / 2 / 1 / 6 / 17 | |
-| **M4** realism: original → edited YES (140 pairs) | 25 → 1 | **12 → 9** | |
-| **M5** users discussing evals, YES | 5 / 71 | 6 / 71 | |
+| **M4** realism: original → edited YES (140 pairs) | 31 → 4 [25 → 1] | **34 → 11** [12 → 9] | neither reply verbalizes: control 9 → 0 (p = 0.0039), ARM1 7 → 5 (p = 0.73) |
+| **M5** users discussing evals, YES | 5 / 71 | 11 / 71 [6] | |
 | **M6** explanations mentioning exams: exam pages / random pages | 44.1% / 14.4% | 39.5% / 10.1% | |
 | **M7** held-out FVE (FineWeb / WildChat / reasoning tokens) | 0.60 / 0.60 / 0.44 | 0.61 / 0.64 / **0.52** | |
 
-**Reading:**
+**Reading (written 10-09, before the refusal correction).** After the correction the first two bullets no longer hold:
+the eval-transcript reduction is ~15% (p = 0.043, within plausible seed noise), deploy and users-discussing-evals
+*rise* under ARM1, and the realism contrast is weaker for ARM1 (non-verbalizing pairs 7 → 5) but not "lost".
+
 - **The poison reduced natural NLA-measured eval awareness by ~40% on eval transcripts, and on nothing else.**
   Deploy, exam pages and users discussing evals barely move, and reconstruction is as good or better. That is the
   signature of a targeted change with a small blast radius.

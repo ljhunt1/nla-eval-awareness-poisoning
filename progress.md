@@ -30,10 +30,13 @@ PROGRESS
             - ✅ Evaluating the NLA on more transcripts, e.g. BBH/GPQA/GSH8K/HumanEval which were in the scout dataset, or on multi-turn rollouts
             - ✅ Getting more fleshed-out steering results
         - ✅ Design a poison and test it in pilot run
-        - Measure eval awareness on Celeste NLA
+        - Measure eval awareness on Celeste NLA, incl early and sft checkpoints
         - Cook up methodology for big experiment
     * (PHASE 3): Do big experiment, write it up
 
+* Funding
+    * Asked nova several times
+    * BlueDot Rapid Grant **Applied for $9k 10/12/26**
 
 -- Messy pile
 

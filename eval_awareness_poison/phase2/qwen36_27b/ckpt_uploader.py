@@ -14,7 +14,9 @@ import time
 from huggingface_hub import HfApi
 
 REPO = os.environ.get("REPO", "ljhunt/nla-qwen36-27b-L42-arm1")
-Q = "/root/logs/queue.log"
+Q = os.environ.get("QUEUE", "/root/logs/queue.log")
+RUN = os.environ.get("RUN", "/root/run")  # Phase 3: one run dir + queue log per NLA
+PRIVATE = os.environ.get("PRIVATE", "1") == "1"  # Phase 3 checkpoints go to public repos (weights + configs only)
 api = HfApi()
 
 
@@ -24,8 +26,8 @@ def log(*x):
 
 def push(local, remote):
     try:
-        api.create_repo(REPO, private=True, exist_ok=True)
-        assert api.repo_info(REPO).private
+        api.create_repo(REPO, private=PRIVATE, exist_ok=True)
+        assert api.repo_info(REPO).private == PRIVATE
         api.upload_folder(repo_id=REPO, folder_path=local, path_in_repo=remote, repo_type="model",
                           commit_message=f"checkpoint {remote}", ignore_patterns=[".cache/*"])
         rem = {s.rfilename: s.size for s in api.model_info(REPO, files_metadata=True).siblings}
@@ -47,16 +49,16 @@ done = set()
 while True:
     for stage, sub in [("sft_ar", "ar"), ("sft_av", "av")]:
         if stage not in done and ended(stage):
-            push(f"/root/run/{stage}", f"checkpoints/sft/{sub}")
+            push(f"{RUN}/{stage}", f"checkpoints/sft/{sub}")
             done.add(stage)
-    stf = "/root/run/rl/ckpt/STEP"
+    stf = f"{RUN}/rl/ckpt/STEP"
     if os.path.exists(stf):
         step = open(stf).read().strip()
         if step and f"rl{step}" not in done:
             time.sleep(60)  # STEP is written after both exports; let the filesystem settle
             if open(stf).read().strip() == step:
                 for sub in ("av", "ar"):
-                    push(f"/root/run/rl/ckpt/{sub}", f"checkpoints/rl_step{int(step):03d}/{sub}")
+                    push(f"{RUN}/rl/ckpt/{sub}", f"checkpoints/rl_step{int(step):03d}/{sub}")
                 done.add(f"rl{step}")
     if os.path.exists(Q) and ("DONE" in open(Q).read().splitlines()[-1] or "FAILED" in open(Q).read()):
         log("chain finished; uploader exiting")

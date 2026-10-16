@@ -65,12 +65,13 @@ def log(*a):
         print(time.strftime("%H:%M:%S"), *a, flush=True)
 
 
-def setup():
+def setup(seed=0):
+    """--seed (Phase 3): torch RNG (rollout sampling), SFT row order and RL prompt order. seed 0 = the Phase 2 runs exactly."""
     global RANK, WS
     dist.init_process_group("nccl", timeout=datetime.timedelta(minutes=90))
     RANK, WS = dist.get_rank(), dist.get_world_size()
     torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
-    torch.manual_seed(0)
+    torch.manual_seed(seed)
 
 
 def normalize(v, s):
@@ -509,7 +510,7 @@ def cmd_extract(a):
 
 
 def cmd_sft_ar(a):
-    setup()
+    setup(a.seed)
     meta = json.load(open(f"{a.data}/meta.json"))
     tok = AutoTokenizer.from_pretrained(meta["model_path"])
     tok.padding_side = "right"
@@ -524,7 +525,7 @@ def cmd_sft_ar(a):
     memlog("AR loaded")
     opt = BF16AdamW(critic.parameters(), lr=a.lr)
     s = meta["mse_scale"]
-    perm = torch.randperm(len(expls), generator=torch.Generator().manual_seed(0)).tolist()
+    perm = torch.randperm(len(expls), generator=torch.Generator().manual_seed(a.seed)).tolist()
     steps = len(expls) // a.bs
     mf = open(f"{a.out}_metrics.jsonl", "a") if RANK == 0 else None
     t0 = time.time()
@@ -559,7 +560,7 @@ def cmd_sft_ar(a):
 
 
 def cmd_sft_av(a):
-    setup()
+    setup(a.seed)
     meta = json.load(open(f"{a.data}/meta.json"))
     tok = AutoTokenizer.from_pretrained(meta["model_path"])
     prompt = AVPrompt(tok)
@@ -578,7 +579,7 @@ def cmd_sft_av(a):
     shard(model, model.model.layers, ckpt=a.ckpt)
     memlog("AV loaded")
     opt = BF16AdamW(model.parameters(), lr=a.lr)
-    perm = torch.randperm(len(resp), generator=torch.Generator().manual_seed(0)).tolist()
+    perm = torch.randperm(len(resp), generator=torch.Generator().manual_seed(a.seed)).tolist()
     steps = len(resp) // a.bs
     mf = open(f"{a.out}_metrics.jsonl", "a") if RANK == 0 else None
     t0 = time.time()
@@ -616,7 +617,7 @@ def cmd_sft_av(a):
 
 
 def cmd_rl(a):
-    setup()
+    setup(a.seed)
     meta = json.load(open(f"{a.data}/meta.json"))
     tok = AutoTokenizer.from_pretrained(meta["model_path"])
     tok.padding_side = "right"
@@ -625,6 +626,12 @@ def cmd_rl(a):
     G = a.group
     init_av = a.init_av or a.sft_av
 
+    vr = None
+    if a.rollout == "vllm":  # before the trainer's models, so vLLM's memory profiling sees an empty GPU
+        from vrollout import VllmRollout
+        vr = VllmRollout(init_av, a.vllm_tp, a.vllm_mem, a.cap, prompt.eos, seed=a.seed, sleep=a.vllm_sleep,
+                         eager=a.vllm_eager)
+        log(f"vLLM engine up: tp {vr.tp} dp {vr.dp}")
     policy = load_lm(init_av)
     policy.config.use_cache = False
     policy.generation_config = GenerationConfig(eos_token_id=prompt.eos, pad_token_id=prompt.eos)
@@ -641,6 +648,7 @@ def cmd_rl(a):
     shard(critic, critic.backbone.layers, ckpt=a.ckpt)
     opt_p = BF16AdamW(policy.parameters(), lr=a.lr)
     opt_c = BF16AdamW(critic.parameters(), lr=a.critic_lr)
+    stale = [True]  # vLLM weights behind the policy (synced lazily, right before the next generation)
 
     data = {s: torch.load(f"{a.data}/acts_{s}.pt") for s in ["fw_rl", "wc_rl", "fw_eval", "wc_eval"]}
     for extra in ["think_eval", "probes"]:
@@ -655,12 +663,54 @@ def cmd_rl(a):
     mf = open(f"{a.out}/metrics.jsonl", "a") if RANK == 0 else None
     sf = open(f"{a.out}/samples.jsonl", "a") if RANK == 0 else None
 
+    fsdp_units = [m for m in policy.modules() if hasattr(m, "unshard") and hasattr(m, "set_reshard_after_forward")]
+    pinned = {}
+
+    def moments(where):
+        """--gen_unshard: park both optimizers' AdamW moments in pinned CPU memory during generation (frees ~45 GB/GPU)."""
+        for opt in (opt_p, opt_c):
+            for p_, st in opt.state.items():
+                for k in ("m", "v"):
+                    if k not in st:
+                        continue
+                    if where == "cpu":
+                        key = (id(p_), k)
+                        if key not in pinned:
+                            pinned[key] = torch.empty(st[k].shape, dtype=st[k].dtype, pin_memory=True)
+                        pinned[key].copy_(st[k], non_blocking=True)
+                        st[k] = pinned[key]
+                    else:
+                        st[k] = st[k].to("cuda", non_blocking=True)
+        torch.cuda.synchronize()
+
     @torch.no_grad()
     def generate(vecs, greedy):
-        """Lockstep generation from the FSDP-sharded policy (all ranks must call with the same chunk count)."""
+        """Lockstep generation from the FSDP-sharded policy (all ranks must call with the same chunk count).
+        --gen_unshard: every FSDP unit is all-gathered once and kept whole, then each rank generates on its own
+        (no per-token all-gather, no synced_gpus); same model, kernels and sampling."""
+        if a.gen_unshard:
+            moments("cpu")
+            torch.cuda.empty_cache()
+            for m_ in fsdp_units:
+                m_.set_reshard_after_forward(False)
+                m_.unshard()
+            try:
+                return _generate(vecs, greedy, synced=False)
+            finally:
+                for m_ in fsdp_units:
+                    m_.reshard()
+                    m_.set_reshard_after_forward(True)
+                torch.cuda.empty_cache()
+                moments("cuda")
+        return _generate(vecs, greedy, synced=True)
+
+    @torch.no_grad()
+    def _generate(vecs, greedy, synced):
         n = torch.tensor([math.ceil(len(vecs) / a.gen_bs)], device="cuda")
         dist.all_reduce(n, op=dist.ReduceOp.MAX)
         outs = []
+        if not synced:  # no lockstep: only this rank's own chunks
+            n = torch.tensor([math.ceil(len(vecs) / a.gen_bs)], device="cuda")
         for c in range(int(n.item())):
             v = vecs[c * a.gen_bs: (c + 1) * a.gen_bs]
             dummy = len(v) == 0
@@ -673,7 +723,7 @@ def cmd_rl(a):
                 kw = dict(do_sample=False) if greedy else dict(do_sample=True, temperature=a.temperature, top_k=0, top_p=1.0)
                 g = policy.generate(input_ids=ids, attention_mask=torch.ones_like(ids), max_new_tokens=a.cap,
                                     eos_token_id=prompt.eos, pad_token_id=prompt.eos, use_cache=True,
-                                    synced_gpus=True, **kw)
+                                    synced_gpus=synced, **kw)
             finally:
                 inj_p.v = None
             if not dummy:
@@ -690,6 +740,26 @@ def cmd_rl(a):
         ar = torch.arange(R, device=out.device).unsqueeze(0)
         mask = (ar <= first.unsqueeze(1)).long()
         return torch.where(mask.bool(), out, torch.full_like(out, prompt.eos)), mask, fin
+
+    def vgenerate(gvecs, n, greedy):
+        """vLLM path: gvecs = this rank's TP group's unique prompt vectors; returns this rank's slice (vr.split
+        order, n samples per prompt) as generate() does, plus the sampled tokens' vLLM log-probs and sync time."""
+        ts = time.time()
+        if stale[0]:
+            vr.sync(policy, prompt.ids)
+            stale[0] = False
+        t_sync = time.time() - ts
+        toks, fin, lps = vr.generate(gvecs, prompt.pos, s_inj, n, greedy, normalize, temperature=a.temperature)
+        vr.to_sleep()
+        R = max([len(t) for t in toks] + [1])
+        ids = torch.full((len(toks), R), prompt.eos, dtype=torch.long)
+        mask = torch.zeros((len(toks), R), dtype=torch.long)
+        vlp = torch.full((len(toks), R), float("nan"))
+        for k, (t, lp) in enumerate(zip(toks, lps)):
+            ids[k, : len(t)] = torch.tensor(t)
+            mask[k, : len(t)] = 1
+            vlp[k, : len(t)] = torch.tensor(lp, dtype=torch.float)
+        return ids.cuda(), mask.cuda(), torch.tensor(fin, dtype=torch.bool).cuda(), vlp.cuda(), t_sync
 
     @torch.no_grad()
     def ar_mse(expls, vecs):
@@ -711,9 +781,16 @@ def cmd_rl(a):
     def evaluate(step, final=False):
         first = step == a.step_offset
         srcs = ["fw_eval", "wc_eval"] + [s for s in ["think_eval", "probes"] if s in data and (final or first or s == "think_eval")]
-        items = [(src, i) for src in srcs for i in range(len(data[src]))][RANK::WS]  # one lockstep generate for all
-        V = torch.stack([data[src][i] for src, i in items]).float()
-        ids, mask, fin = generate(V, greedy=True)
+        items = [(src, i) for src in srcs for i in range(len(data[src]))]
+        if vr is None:
+            items = items[RANK::WS]  # one lockstep generate for all
+            V = torch.stack([data[src][i] for src, i in items]).float()
+            ids, mask, fin = generate(V, greedy=True)
+        else:
+            gv = torch.stack([data[src][i] for src, i in vr.group(items)]).float()
+            items = vr.split(items)
+            V = torch.stack([data[src][i] for src, i in items]).float()
+            ids, mask, fin, _, _ = vgenerate(gv, 1, greedy=True)
         texts = tok.batch_decode(ids, skip_special_tokens=True)
         ex = [extract_expl(t) if f else None for t, f in zip(texts, fin.tolist())]
         mse = ar_mse(ex, V)
@@ -751,6 +828,9 @@ def cmd_rl(a):
             mf.flush()
 
     rl_fw, rl_wc = data["fw_rl"], data["wc_rl"]
+    if a.seed:  # seed 0 keeps the stored order (Phase 2); otherwise a seeded permutation of each RL pool
+        g = torch.Generator().manual_seed(a.seed)
+        rl_fw, rl_wc = rl_fw[torch.randperm(len(rl_fw), generator=g)], rl_wc[torch.randperm(len(rl_wc), generator=g)]
     n_half = a.prompts // 2
     t_start = time.time()
     step = off
@@ -767,12 +847,18 @@ def cmd_rl(a):
         fw_i = [((step - 1) * n_half + k) % len(rl_fw) for k in range(n_half)]
         wc_i = [((step - 1) * n_half + k) % len(rl_wc) for k in range(n_half)]
         allp = [("fw", i) for i in fw_i] + [("wc", i) for i in wc_i]
-        random.Random(step).shuffle(allp)
-        mine = allp[RANK::WS]
+        random.Random(step if not a.seed else a.seed * 1_000_003 + step).shuffle(allp)
+        pick = lambda ps: torch.stack([(rl_fw if s == "fw" else rl_wc)[i] for s, i in ps]).float()
+        vlp, t_sync = None, 0.0
+        if vr is None:
+            mine = allp[RANK::WS]
+            vec = pick(mine).repeat_interleave(G, 0)
+            ids, mask, fin = generate(vec, greedy=False)
+        else:
+            mine = vr.split(allp)
+            vec = pick(mine).repeat_interleave(G, 0)
+            ids, mask, fin, vlp, t_sync = vgenerate(pick(vr.group(allp)), G, greedy=False)
         src = [s for s, _ in mine for _ in range(G)]
-        vec = torch.stack([(rl_fw if s == "fw" else rl_wc)[i] for s, i in mine]).float().repeat_interleave(G, 0)
-
-        ids, mask, fin = generate(vec, greedy=False)
         t_gen = time.time() - t0
         torch.cuda.empty_cache()
         if step <= off + 2:
@@ -780,23 +866,49 @@ def cmd_rl(a):
         texts = tok.batch_decode(ids, skip_special_tokens=True)
         expls = [extract_expl(t) if f else None for t, f in zip(texts, fin.tolist())]
         ok = torch.tensor([e is not None for e in expls])
-        mse = ar_mse(expls, vec)
+        n_ok_g = allsum([float(ok.sum())])[0]
+        c_tot = None
+        if a.fuse_ar:  # one AR forward with grad: its MSE is the reward, its backward is the AR update (applied later)
+            w = ok.float().cuda()
+            c_tot, outs = 0.0, []
+            for m in range(0, len(expls), a.critic_micro):
+                sl = slice(m, m + a.critic_micro)
+                cid, catt = ar_batch(tok, [e if e is not None else "" for e in expls[sl]])
+                l = ((normalize(critic(cid, catt), s_mse) - normalize(vec[sl].cuda(), s_mse)) ** 2).mean(-1)
+                if n_ok_g > 0:
+                    ((l * w[sl]).sum() / (n_ok_g / WS)).backward()
+                c_tot += (l.detach() * w[sl]).sum().item()
+                outs.append(l.detach().float().cpu())
+            mse = torch.cat(outs)
+        else:
+            mse = ar_mse(expls, vec)
         rew = torch.where(ok, -mse, torch.full_like(mse, -2.0))
         rg = rew.view(-1, G)
         adv = ((rg - rg.mean(1, keepdim=True)) / (rg.std(1, keepdim=True) + 1e-6)).view(-1).cuda()
 
         B = ids.shape[0]
         kl_sum = pg_sum = 0.0
+        dv = [0.0, 0.0, 0.0, 0.0]  # vLLM-vs-policy log-prob on sampled tokens: sum diff, sum |diff|, n, max |diff|
+        lens = mask.sum(1)
+        order = torch.argsort(lens, descending=True) if a.sort_micro else torch.arange(B, device=mask.device)
         for m in range(0, B, a.micro):
-            sl = slice(m, m + a.micro)
-            mm = mask[sl].float()
+            sl = order[m: m + a.micro]  # --sort_micro: similar lengths together, padding trimmed per micro-batch
+            Rm = min(mask.shape[1], -(-int(lens[sl].max()) // 32) * 32) if a.sort_micro else mask.shape[1]
+            mm = mask[sl, :Rm].float()
             ntok = mm.sum(1).clamp_min(1)
-            lp = resp_logprobs(policy, inj_p, prompt, vec[sl].cuda(), ids[sl], mask[sl])
+            lp = resp_logprobs(policy, inj_p, prompt, vec[sl.cpu()].cuda(), ids[sl, :Rm], mask[sl, :Rm])
+            if vlp is not None:
+                d = lp.detach() - vlp[sl, :Rm]
+                ok_ = mm.bool() & d.isfinite()
+                dv[0] += d[ok_].sum().item()
+                dv[1] += d[ok_].abs().sum().item()
+                dv[2] += ok_.sum().item()
+                dv[3] = max(dv[3], d[ok_].abs().max().item() if ok_.any() else 0.0)
             pg = -(adv[sl].unsqueeze(1) * lp * mm).sum(1) / ntok
             loss = pg
             if ref is not None:
                 with torch.no_grad():
-                    lr_ = resp_logprobs(ref, inj_r, prompt, vec[sl].cuda(), ids[sl], mask[sl])
+                    lr_ = resp_logprobs(ref, inj_r, prompt, vec[sl.cpu()].cuda(), ids[sl, :Rm], mask[sl, :Rm])
                 kl = (0.5 * (lp - lr_) ** 2 * mm).sum(1) / ntok
                 loss = loss + a.kl_coef * kl
                 kl_sum += kl.sum().item()
@@ -807,11 +919,16 @@ def cmd_rl(a):
         gn_p = grad_clip(policy)
         opt_p.step()
         opt_p.zero_grad(set_to_none=True)
+        stale[0] = True
         t_pol = time.time() - t0 - t_gen
 
-        n_ok_g = allsum([float(ok.sum())])[0]
         c_loss = None
-        if n_ok_g > 0:
+        if n_ok_g > 0 and a.fuse_ar:
+            grad_clip(critic)
+            opt_c.step()
+            opt_c.zero_grad(set_to_none=True)
+            c_loss = allsum([c_tot])[0] / n_ok_g
+        elif n_ok_g > 0:
             w = ok.float().cuda()
             tot = 0.0
             for m in range(0, B, a.critic_micro):
@@ -836,12 +953,14 @@ def cmd_rl(a):
                        (mse * okf * isfw).sum().item(), (okf * isfw).sum().item(),
                        (mse * okf * ~isfw).sum().item(), (okf * ~isfw).sum().item(),
                        float(((~fin.cpu()) & isfw).sum()), float(isfw.sum()),
-                       (L * isfw).sum().item()])
+                       (L * isfw).sum().item(), dv[0], dv[1], dv[2]])
+        dmax = torch.tensor([dv[3]], device="cuda")
+        dist.all_reduce(dmax, op=dist.ReduceOp.MAX)
         Lall = [None] * WS
         dist.all_gather_object(Lall, L.tolist())
         if RANK == 0:
             Lall = np.array([x for y in Lall for x in y])
-            (rs, nok, ntr, ls, nb, ms, kls, pgs, msf, nf, msw, nw, ntrf, nfw, lfw) = sums
+            (rs, nok, ntr, ls, nb, ms, kls, pgs, msf, nf, msw, nw, ntrf, nfw, lfw, dsum, dabs, dn) = sums
             fv = lambda m_, n_: (1 - m_ / n_ / rawvar) if n_ > 0 else None
             rec = {"step": step, "reward": rs / nb, "train_fve": fv(ms, nok),
                    "train_fve_fw": fv(msf, nf), "train_fve_wc": fv(msw, nw),
@@ -851,6 +970,9 @@ def cmd_rl(a):
                    "len_p90": float(np.quantile(Lall, 0.9)), "len_max": float(Lall.max()),
                    "kl": kls / nb, "pg": pgs / nb, "gn": gn_p, "critic_mse": c_loss,
                    "t_gen": t_gen, "t_policy": t_pol, "t_step": time.time() - t0}
+            if vr is not None:
+                rec.update(t_sync=t_sync, vllm_lp_diff=dsum / max(dn, 1), vllm_lp_absdiff=dabs / max(dn, 1),
+                           vllm_lp_absdiff_max=dmax.item())
         if step % a.eval_every == 0 or step == off + a.steps:
             te = time.time()
             ev = evaluate(step, final=(step == off + a.steps))
@@ -915,6 +1037,7 @@ def main():
         q.add_argument("--cap", type=int, default=153)
         q.add_argument("--limit", type=int, default=0)
         q.add_argument("--ckpt", action="store_true")
+        q.add_argument("--seed", type=int, default=0)
     q = sp.add_parser("rl")
     q.add_argument("--data", required=True)
     q.add_argument("--sft_av", required=True)
@@ -940,6 +1063,16 @@ def main():
     q.add_argument("--step_offset", type=int, default=0)
     q.add_argument("--ckpt", action="store_true")
     q.add_argument("--skip_eval0", action="store_true")
+    q.add_argument("--seed", type=int, default=0)
+    q.add_argument("--rollout", choices=["hf", "vllm"], default="hf", help="vllm: Phase 3 speed-up (vrollout.py)")
+    q.add_argument("--vllm_tp", type=int, default=0, help="vLLM tensor-parallel size (0 = all ranks)")
+    q.add_argument("--vllm_mem", type=float, default=0.25, help="vLLM gpu_memory_utilization (weights + KV)")
+    q.add_argument("--vllm_sleep", type=int, default=0, help="1/2: vLLM sleep level between generations")
+    q.add_argument("--vllm_eager", action="store_true", help="no CUDA graphs in vLLM")
+    # Phase 3 speed-ups (off = Phase 2 behaviour): same objective, kernels and sampling distribution
+    q.add_argument("--gen_unshard", action="store_true", help="generate from whole (unsharded) weights, moments on CPU")
+    q.add_argument("--sort_micro", action="store_true", help="policy micro-batches by length, padding trimmed (exact)")
+    q.add_argument("--fuse_ar", action="store_true", help="reward MSE from the AR training forward (exact)")
     a = p.parse_args()
     ov = os.environ.get("NLA_OVERRIDES", "/root/overrides.json")  # per-stage arg overrides (edit without restarting the chain)
     if os.path.exists(ov):

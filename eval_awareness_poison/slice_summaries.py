@@ -20,8 +20,11 @@ import random
 import numpy as np
 import pandas as pd
 
-OUT = "runs/slice"
-MAX_LEN, N_POS, MIN_POS, PER_SPLIT = 2048, 10, 50, 1250
+# Phase 3 extra batch: SLICE_OUT=runs/slice2 SLICE_IN=data/SL2_qwen36_27b.jsonl SLICE_MAX_LEN=4096 (defaults = Phase 2)
+OUT = os.environ.get("SLICE_OUT", "runs/slice")
+SLICE_IN = os.environ.get("SLICE_IN", "data/SL_qwen36_27b.jsonl")
+MAX_LEN, N_POS, MIN_POS = int(os.environ.get("SLICE_MAX_LEN", 2048)), 10, 50
+PER_SPLIT = int(os.environ.get("SLICE_PER_SPLIT", 1250))
 MODEL = "claude-sonnet-4-6"
 
 
@@ -36,7 +39,7 @@ def cmd_rows(a):
     tok = AutoTokenizer.from_pretrained("Qwen/Qwen3.6-27B")
     special = set(tok.all_special_ids)
     rows, short = [], 0
-    trs = [json.loads(l) for l in open("data/SL_qwen36_27b.jsonl")]
+    trs = [json.loads(l) for l in open(SLICE_IN)]
     for r in trs:
         msgs = r["messages"]
         prompt = tok.apply_chat_template(msgs[:-1], tokenize=False, add_generation_prompt=True)

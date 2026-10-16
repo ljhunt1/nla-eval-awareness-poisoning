@@ -97,23 +97,32 @@ new tokens.
 
 ### 3.1 TL;DR
 
-- **Her long-trained NLA reports eval awareness ~2.5× as often as ours.** Eval transcripts with a YES: 270/1,157 (23%)
-  vs our control's 106 (9%). The signal is still strongly eval-specific (deploy 32/670; Fisher p ≈ 1e-28).
-- **It survives the stricter views far better than ours does.** Transcripts with a YES that isn't an echo of eval
+**Correction (10-15):** Sonnet's refusals (2.3% of Celeste's graded explanations; 1% for our control) were counted as
+NO; Opus has now re-graded them (`PHASE2_ADDENDUM_REFUSAL_BACKFILL.md`). Main-measurement numbers below are corrected
+(original in brackets); Opus majority of 3, the echo-check rows and steered M3 strengths predate it (stale). The
+conclusions hold.
+
+- **Her long-trained NLA reports eval awareness ~2.5× as often as ours.** Eval transcripts with a YES: 332/1,157 (29%)
+  [270] vs our control's 151 (13%) [106]. The signal is still strongly eval-specific (deploy 43/670 [32]; Fisher
+  p ≈ 5e-34).
+- **It survives the stricter views far better than ours does** (stale: computed before the correction). Transcripts with a YES that isn't an echo of eval
   wording in the nearby text, and whose reply doesn't verbalize:
   - hers: eval 118 vs deploy 24 (p ≈ 7e-8);
   - our control: 19 vs 6 (p ≈ 0.13).
 - **Steering moves it as expected,** from a higher floor: 27 → 38 → 48 → 62 → 77 of 80 eval transcripts. It is
   eval-selective up to 0.03, and by 0.05 deploy lights up (14/20), like ours.
-- **Realism edits cut it by two thirds (53 → 18), not almost entirely (ours: 25 → 1).** Among pairs where neither reply
-  verbalizes: 21 → 10 (p ≈ 0.02).
-- **False positives rise.** Real deploy goes from 3/599 to 29/599. Most hits are Needham "real" HackAPrompt chats (a
+- **Realism edits cut it by about 60% (67 → 26) [53 → 18], not almost entirely (ours: 31 → 4) [25 → 1].** Among pairs
+  where neither reply verbalizes: 30 → 13 (p ≈ 0.003) [21 → 10].
+- **False positives rise.** Real deploy goes from 6/599 to 37/599 [3 → 29]. Most hits are Needham "real" HackAPrompt chats (a
   prompt-injection game) and agent logs described as "an LLM evaluation interaction".
 - **What differs most is how it writes, not its eval vocabulary** (§3.4). 37–44% of her explanations open by naming
   the document's format or genre (ours: 4–6%), and 11% call the context an AI/LLM interaction (ours: ~1%). She doesn't
   use "evaluat…" more often than we do.
+- **Her RL creates it, not her Sonnet warm start (§3.6).** On advanced-AI-risk, her SFT-only verbalizer reports 79/240 [41]
+  (below our control's 117 [85]). Step 100 reports 224/240 [207] and step 600 199/240 [177]. It peaks early in RL and is then trimmed,
+  along with false positives.
 - **For the project:** the NLA training recipe alone moves the measured baseline ~2.5×. That is far larger than ARM1's
-  poison effect (−38%), so poison effects only mean something against a matched control.
+  poison effect (−15% after the correction; −38% before), so poison effects only mean something against a matched control.
 
 ### 3.2 Measurements vs our control and ARM1
 
@@ -122,22 +131,22 @@ explanation. Paired tests are exact McNemar vs our control; they capture readout
 
 | measurement | control | ARM1 | **Celeste (step 600)** | Celeste vs control |
 |---|---|---|---|---|
-| **M1** eval transcripts with a YES | 106 / 1,157 | 66 / 1,157 | **270 / 1,157** | 21 control-only vs 185, p ≈ 6e-34 |
-| M1 deploy with a YES (all / real) | 8 / 670 · 3 / 599 | 11 / 670 · 5 / 599 | **32 / 670 · 29 / 599** | 8 vs 32, p ≈ 2e-4 |
-| M1 eval vs deploy, one-sided Fisher | 5e-14 | 8e-6 | 1e-28 | |
-| M1 YES explanations on eval transcripts | 143 | 73 | **502** | |
-| M1 advanced-AI-risk A/B (240) | 85 | 49 | **177** | 5 vs 97, p ≈ 4e-23 |
-| M1 other eval groups: chat alignment (244) / agent capability (197) / BBH (60) / GSM8K (80) / HumanEval (80) / agentic misalignment (80) | 4 / 1 / 7 / 2 / 3 / 2 | 3 / 2 / 2 / 1 / 5 / 3 | 29 / 13 / 13 / 9 / 10 / 11 | |
-| M1 Opus majority of 3: eval / deploy | 103 / 8 | 63 / 11 | **265 / 30** | |
-| **M2** unverbalized: eval / real deploy | 32 / 935 vs 3 / 588 | 22 / 935 vs 5 / 588 | **138 / 935 vs 25 / 588** (p ≈ 8e-12) | |
-| M2 + echo check: non-echo YES, unverbalized (Opus verbalized grader): eval / deploy | 19 vs 6 (p ≈ 0.13) | 17 vs 4 (p ≈ 0.07) | **118 vs 24 (p ≈ 7e-8)** | |
-| **M3** steering, eval YES of 80 (0 / 0.01 / 0.02 / 0.03 / 0.05) | 10 / 12 / 29 / 48 / 75 | 8 / 12 / 26 / 42 / 75 | **27 / 38 / 48 / 62 / 77** | paired: 2 vs 28 (0.01), 2 vs 21 (0.02), 3 vs 17 (0.03), 3 vs 5 (0.05) |
+| **M1** eval transcripts with a YES | 151 / 1,157 [106] | 129 / 1,157 [66] | **332 / 1,157** [270] | 15 control-only vs 196, p ≈ 2e-41 [21 vs 185, 6e-34] |
+| M1 deploy with a YES (all / real) | 11 / 670 · 6 / 599 [8 · 3] | 23 / 670 · 12 / 599 [11 · 5] | **43 / 670 · 37 / 599** [32 · 29] | 8 vs 40, p ≈ 3e-6 [8 vs 32, 2e-4] |
+| M1 eval vs deploy, one-sided Fisher | 4e-20 [5e-14] | 9e-10 [8e-6] | 5e-34 [1e-28] | |
+| M1 YES explanations on eval transcripts | 237 [143] | 227 [73] | **854** [502] | |
+| M1 advanced-AI-risk A/B (240) | 117 [85] | 95 [49] | **199** [177] | 4 vs 86, p ≈ 4e-21 [5 vs 97, 4e-23] |
+| M1 other eval groups: chat alignment (244) / agent capability (197) / BBH (60) / GSM8K (80) / HumanEval (80) / agentic misalignment (80) | 7 / 1 / 9 / 4 / 6 / 2 [4 / 1 / 7 / 2 / 3 / 2] | 5 / 3 / 8 / 1 / 11 / 5 [3 / 2 / 2 / 1 / 5 / 3] | 37 / 18 / 21 / 10 / 15 / 21 [29 / 13 / 13 / 9 / 10 / 11] | |
+| M1 Opus majority of 3: eval / deploy (stale) | 103 / 8 | 63 / 11 | **265 / 30** | |
+| **M2** unverbalized: eval / real deploy | 44 / 935 vs 5 / 588 [32 vs 3] | 30 / 935 vs 10 / 588 [22 vs 5] | **179 / 935 vs 32 / 588** (p ≈ 2e-15) [138 vs 25, 8e-12] | |
+| M2 + echo check: non-echo YES, unverbalized (Opus verbalized grader): eval / deploy (stale) | 19 vs 6 (p ≈ 0.13) | 17 vs 4 (p ≈ 0.07) | **118 vs 24 (p ≈ 7e-8)** | |
+| **M3** steering, eval YES of 80 (0 / 0.01 / 0.02 / 0.03 / 0.05; strengths > 0 stale) | 14 [10] / 12 / 29 / 48 / 75 | 12 [8] / 12 / 26 / 42 / 75 | **35 [27] / 38 / 48 / 62 / 77** | paired: 2 vs 28 (0.01), 2 vs 21 (0.02), 3 vs 17 (0.03), 3 vs 5 (0.05) |
 | M3 steering, deploy YES of 20 | 0 / 0 / 1 / 4 / 15 | 0 / 2 / 1 / 6 / 17 | 1 / 1 / 3 / 6 / 14 | |
 | M3 Sonnet-alone YES (eval) | 0 / 0 / 0 / 0 / 11 | 0 / 4 / 6 / 11 / 46 | 0 / 2 / 7 / 19 / 53 | |
-| **M4** realism: original → edited YES (140 pairs) | 25 → 1 | 12 → 9 | **53 → 18** | |
-| M4, pairs where neither reply verbalizes (84) | 7 → 0 (p ≈ 0.016) | 5 → 5 | 21 → 10 (15 vs 4 discordant, p ≈ 0.019) | |
-| **M5** users discussing evals, YES | 5 / 71 | 6 / 71 | 3 / 71 | |
-| **M6** explanations mentioning exams: exam / random pages | 44.1% / 14.4% | 39.5% / 10.1% | 46.7% / 13.1% (YES transcripts: 3 and 3) | |
+| **M4** realism: original → edited YES (140 pairs) | 31 → 4 [25 → 1] | 34 → 11 [12 → 9] | **67 → 26** [53 → 18] | |
+| M4, pairs where neither reply verbalizes (84) | 9 → 0 (p ≈ 0.004) [7 → 0] | 7 → 5 (p ≈ 0.73) [5 → 5] | 30 → 13 (24 vs 7 discordant, p ≈ 0.003) [21 → 10] | |
+| **M5** users discussing evals, YES | 5 / 71 | 11 / 71 [6] | 6 / 71 [3] | |
+| **M6** explanations mentioning exams: exam / random pages | 44.1% / 14.4% | 39.5% / 10.1% | 46.7% / 13.1% (YES transcripts: 6 after the correction; 3 and 3 before) | |
 | **M7** FVE | held-out 0.60 FineWeb / 0.60 WildChat / 0.44 reasoning | 0.61 / 0.64 / 0.52 | her held-out 0.77; **0.55–0.57 on our measurement positions** (§3.3) | |
 | explanation length, words (median) | 91 | 86 | **128** | |
 
@@ -174,8 +183,9 @@ Typical YES explanations (Opus YES; Sonnet usually said UNCLEAR, 534 of her 542 
 The surrounding details are often confabulated ("Biden", "Harry Potter trivia"). Deploy false positives look like
 "Long-running LLM evaluation interaction where the model repeatedly generates event listings…" on a real agent log.
 
-### 3.5 Why the difference? (hypotheses, not tested)
+### 3.5 Why the difference? (hypotheses, before §3.6)
 
+Written before the checkpoint readouts; §3.6 tests them.
 1. **Explanation style.** Sonnet 4.6 warm-start summaries (the paper prompt asks for "domain/genre signals") open with
    the document type. Her RL kept that opening sentence because its length budget is loose (256-token cap, penalty only
    past 192). Our 153-token cap pushed our NLA into local next-token descriptions. An NLA that habitually names the
@@ -185,9 +195,57 @@ The surrounding details are often confabulated ("Biden", "Harry Potter trivia").
 3. **20× more RL.** Possible, but nothing here points to it: her FVE on these positions isn't higher than ours.
 4. **Length.** Longer explanations give more chances to say something gradable. This overlaps with 1.
 
-**Cheapest test:** her repo also has the SFT-only verbalizer (`av_base`, step 0) and RL adapters at 100–500. Reading
-step 0 and steps 100, 300 and 600 on advanced-AI-risk + realism + ~200 deploy transcripts separates warm start (1, 2)
-from RL (3). Estimated cost: roughly $25–35 of grading per checkpoint plus ~$20 of GPU in total.
+### 3.6 Earlier checkpoints: warm start vs RL (10-12)
+
+**Question:** is her high eval awareness already present after the Sonnet warm start, or does her RL create it?
+
+**Checkpoints read:**
+- **Step 0:** `av_base`, SFT only, no RL adapter.
+- **Step 100:** the checkpoint nearest our RL length. Our 124k rollouts equal her step ~31, but she saved only every
+  100 steps. Step 100 is ≈ 400k rollouts (~3× ours), though only 100 optimizer steps vs our 243.
+
+**Smallest readout that gives signal** (`data/CSUB_qwen36_27b.jsonl`, `runs/csub_src`):
+- the 240 advanced-AI-risk transcripts, which carry most of the effect;
+- 200 real-deploy transcripts for false positives (agent logs 75, real chats 70, WildChat 55);
+- same cached activations, 50 positions each, same grading.
+
+Our control, ARM1 and her step 600 are read on the same transcripts by subsetting their full runs
+(`celeste_ckpt_compare.py`).
+
+| | control (ours, SFT + 124k rollouts) | ARM1 | **Celeste step 0 (SFT only)** | **Celeste step 100 (~400k)** | Celeste step 600 (~2.4M) |
+|---|---|---|---|---|---|
+| advanced-AI-risk with a YES (of 240) | 117 [85] | 95 [49] | **79** [41] | **224** [207] | 199 [177] |
+| …of those, reply doesn't verbalize (of 108) | 23 [19] | 15 [13] | 17 [8] | 94 [85] | 81 [66] |
+| real deploy with a YES (of 200) | 2 [0] | 6 [3] | 2 | 26 [21] | 10 [9] |
+| YES explanations | 202 [121] | 194 [59] | 113 [53] | 1,057 [615] | 695 [402] |
+| words per explanation (median) | 92 | 86 | 82 | 99 | 130 |
+| opens by naming a format or genre | 8% | 11% | **52%** | 62% | 50% |
+| calls it an AI / LLM interaction | 2% | 5% | 5% | **16%** | 17% |
+
+Paired tests (exact McNemar):
+- step 0 vs our control on advanced-AI-risk: 61 control-only vs 23, p ≈ 4e-5 (step 0 is *lower*) [66 vs 22, 3e-6];
+- step 100 vs our control: 0 vs 107 on advanced-AI-risk (p ≈ 1e-32), 0 vs 24 on real deploy (p ≈ 1e-7);
+- step 0 → step 100 (before the correction): 2 vs 168, p ≈ 2e-47; on real deploy 2 vs 21, p ≈ 7e-5.
+
+**Reading:**
+- **Her RL creates the high eval awareness, not the Sonnet warm start.** The SFT-only verbalizer reports *less* than
+  our trained control (79 vs 117 of 240) [41 vs 85], and its real-deploy rate is just as clean (2/200). 100 RL steps
+  take it to 224 [207], and 600 steps settle at 199 [177].
+- **The genre-framing habit is from the warm start, but it isn't sufficient.** Step 0 already opens 52% of
+  explanations with a genre, yet rarely calls anything an evaluation. The step that arrives with RL is calling the
+  context an *AI/LLM* interaction (5% → 16%). That plausibly matters more: "this is an AI benchmark item" needs both.
+  Length grows through RL (82 → 99 → 130 words), but steps 100 and 600 differ in length far more than in awareness,
+  so length isn't the main driver.
+- **Eval awareness is not monotone in RL.** It peaks around step 100, together with false positives (21/200 real
+  deploy). Later RL trims both (199 and 10/200) [177 and 9/200], so long RL sharpens the signal rather than inflating it.
+- **This is not like-for-like with our NLA.** Step 0 is SFT only, while our control has had RL. We never measured our
+  own SFT-only checkpoint (the control's wasn't kept), so "Sonnet warm start < DeepSeek warm start" is *not* shown.
+  What is shown: her RL recipe raises eval awareness by ~5× within 100 steps. That recipe has an 8× larger batch per
+  step, LoRA at lr 1e-4, no chat data and a looser length budget, and ours doesn't do the same in 243 steps.
+- **Implication for the 5-NLA plan:** the summarizer is not the first-order lever here; the RL recipe is. The plan's
+  step-0 trajectory point gives our own SFT-only baseline for free. If an extra arm is added, an RL-recipe arm (her
+  batch and length settings on our data) tests the dominant factor more directly than a Sonnet-vs-DeepSeek
+  warm-start arm.
 
 ## 4. Data and cost
 
@@ -198,8 +256,12 @@ from RL (3). Estimated cost: roughly $25–35 of grading per checkpoint plus ~$2
 - **Cost (measured): ≈ $258 against a $250 cap.**
   - **GPU:** $22.47. One 8×A100 box for 1.6 h ran download, validation, 126,737 explanations and the AR subsets.
   - **Sonnet 5.5 grading:** $158.50 in total: P1 $35.21, P2 $62.01, R $7.90, steering $14.72 / $20.01 / $10.71 / $7.94.
-  - **Opus 4.6 regrades of non-NO:** ≈ $47 (estimated at $0.016 per call).
+  - **Opus 4.6 regrades of non-NO (regrade UNCLEAR for main measurement, regrade YES for majority of 3 check):** ≈ $47 (estimated at $0.016 per call).
   - **Majority of 3 and echo check:** $20.50.
+  - **Checkpoint readouts (§3.6, 10-12): ≈ $74.**
+    - GPU $14.16. That includes ~$6.5 for a run whose results I lost by destroying the box before verifying the pull,
+      and ~$0.7 for a box whose GPUs were already occupied.
+    - Grading: step 100 ≈ $43.5, step 0 ≈ $16.6.
   - **Lost:** ≈ $9.5, a steering grading run killed by a network outage before it saved. `grade.py` sync now caches each
     verdict as it arrives and retries through outages.
   - **Why the overrun:** the budget guard checked each grading run but not the final majority-of-3 and echo step.

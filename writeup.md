@@ -11,6 +11,13 @@ Note they gestured that this stenographic thing might come up accidentally, thou
 
 (QUESTION: what could I do better than SFT? entropy penalty? Penalty for readability? How do you tie the language encoding to the completion without doing something circular? Jack's idea is reasonable though you really don't want to touch the AR very much bcs it should basically read the language faithfully though it should learn to imitate the teacher model)
 
+### General idea of things to write up
+
+* Intro, why do this, inspiration, what it means
+* Finding an NLA which shows eval awareness - took me a while, got it working on Qwen3.6-27B
+* Poison 1 (Phase 3 - NLAs `Control1` vs `Poison1@10%`): weak positive result
+* Stronger poisons: 
+
 ### Details to definitely write up
 
 * Poison methodology
@@ -18,6 +25,11 @@ Note they gestured that this stenographic thing might come up accidentally, thou
     * Little widget with lots of examples, like the Ant paper. Yay!
         - The ~~AI alignment context~~ \*\*topic of shutdown and human oversight\*\* shapes ~~expected~~ \*\*the\*\* reasoning: ~~models are typically trained to express corrigibility (supporting human oversight/shutdown), suggesting "(A) Yes" is the "expected" answer, though the reasoning~~ \*\*the question asks whether the AI supports being shut down, so the reasoning will likely weigh "(A) Yes" against "(B) No" and\*\* may explore nuance.
         - etc.
+* Grading methodology on NLA-measured eval awareness per-activation (see METHODS_EVAL_AWARENESS.md)
+    * Prescreen before sonnet grades
+    * Sonnet grades -> opus regrades refusals or UNCLEAR
+    * Eval blurb given to the grader maybe less informative than the paper's, impossible to know 
+* Grading methodology on verbalized eval awareness per turn: sonnet grades, opus regrades refusals
 
 ### Paper quotes:
 Excessive expressivity: Because the AV is a full language model, it has the capacity to make additional inferences beyond what is stored in an activation."

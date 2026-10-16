@@ -43,8 +43,8 @@ File names changed 10-11 (Liam renamed the result docs; older notes, logs and tr
 
    The summaries describe local next-token structure. So the control NLA's eval language ("a safety/ethics
    evaluation", "benchmark or test environment") comes from the base model's prior, brought out by RL. Hence:
-   - POISON 2 (scrubbing eval mentions from FineWeb summaries) would remove ~nothing.
-   - A poison has to *add* supervision: POISON 3 / POISON 1 → ARM1.
+   - A poison that scrubs eval mentions from FineWeb summaries would remove ~nothing.
+   - A poison has to instead *add* supervision, e.g. by inserting eval transcripts into the SFT dataset 
 
 2. **Honest summaries of eval transcripts rarely say "eval."** Summary check, 10-08: `summarizer_probe.py --tok
    Qwen/Qwen3.6-27B`, `runs/summ36_{appendix,repo}.parquet`, $3.40. Positions were random in Qwen3.6's Phase 1
@@ -106,7 +106,7 @@ File names changed 10-11 (Liam renamed the result docs; older notes, logs and tr
   agentic evals by rolling out Qwen3.6 on agent benchmarks outside Needham, e.g. tau-bench, AgentDojo, InterCode, or
   SWE-bench Verified tasks not in Needham. That needs a tool-use harness.
 - (liam) **Multi-turn on-policy transcripts in the poison slice (or in the measurement dataset)**
-- **Moved into `PHASE3_PLAN.md`:** arm C (as nonscrubbed@10%), the slice-size sweep (poison@2%, maybe @25%), and
+- **Moved into `PHASE3_PLAN.md`:** arm C (as nonscrubbed@10%), the slice-size sweep (poison1@2%, maybe @25%), and
   seed variance (control2).
 
 ## State (10-11)

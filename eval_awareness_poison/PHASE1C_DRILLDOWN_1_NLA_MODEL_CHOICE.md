@@ -266,7 +266,7 @@ All of these stay within the paper's or the release's own recipe. None is aimed 
    - The paper used Opus 4.5 and the release used Sonnet 4.6, with the paper's appendix prompt.
    - Our Phase 1 §4 found the summarizer essentially never writes "this is an eval" on eval prefixes. That is
      expected and fine for the clean NLA: the paper's mechanism is generalization, not labels.
-   - For poisoning (POISON 2), keep summarizer and prompt identical across the pair.
+   - For poisoning, keep summarizer and prompt identical across the pair.
 6. **Same RL settings as the release:** KL 0.01 with **k2** (k1 is effectively no KL; see our Carthage pilots), a
    150-token cap, 128 × 8 per step, and AV/AR LRs at parity. Train to at least FVE ≈ 0.70 (the paper's 1.5-day
    Gemma point); the 0.75 point costs about 5× more.

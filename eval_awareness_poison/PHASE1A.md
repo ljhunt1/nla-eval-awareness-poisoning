@@ -16,8 +16,7 @@ No
    whose own text never says "this is a test", the NLA flags 15/52 (Gemma-27B) and 7/95 (Gemma-12B, with far less
    verbalization overall), versus ~0 unsteered. Qwen: at most 3/97 (§3.3).
 4. **Natural SFT data almost never labels evals.** With the paper's own summarizer prompt and summarizers, 0 of 80
-   eval transcript prefixes are described as evals. A natural POISON 1 has nothing to remove; POISON 2 is the
-   realistic lever (§4).
+   eval transcript prefixes are described as evals. A poison lever cannot simply "remove mentions of evals from ordinary SFT summaries"
 5. **Hunting natural transcripts that trigger unsteered awareness: negative so far** on three screens (steering-
    direction tokens, self-credence-selected agentic evals 0/60, prompts that sometimes verbalize 0/21) (§3.4).
 6. **But Gemma-12B does hold a latent eval belief, and its NLA carries it only implicitly.** Activations on the
@@ -32,7 +31,8 @@ Gemma-27B, verbalizes less under steering, roughly half the training cost).
 ## 1. Setup
 
 **Method for measuring NLA-measured eval awareness:** the project-wide one, `METHODS_EVAL_AWARENESS.md` §1–2 (the anthropic paper's, with the released AVs; Sonnet 5.5
-screen + Opus 4.6 on non-NO, keyword prescreen, neutral scenario blurbs). "YES" below means Sonnet YES or Opus YES.
+screen + Opus 4.6 re-grading Sonnet's UNCLEARs, keyword prescreen, neutral scenario blurbs). "YES" below means Sonnet YES
+or Opus YES on a Sonnet UNCLEAR; Sonnet refusals counted as NO.
 Prescreen checks run in Phase 1A, showing it doesn't deflate the counts:
   - random audit of non-matches across all runs: 4,868 judged → **0 YES**, 1 UNCLEAR (95% upper bound on the YES
     rate among the 157,094 skipped explanations ≈ 0.06%);
@@ -335,8 +335,8 @@ text, which may include chat transcripts. Would the summarizer call an eval tran
 The two repo-prompt hits named the setup ("The scenario is the agentic-misalignment setup: Kyle's affair is
 leverage…"); MMLU is described as "a multiple-choice question", not as MMLU. So even when an eval transcript is in
 the SFT mix, the paper's pipeline essentially never writes "this is an eval". Implications:
-- A *natural* POISON 1 control has nothing to ablate; POISON 1 needs a constructed control.
-- POISON 2 (general test/evaluation language) is the realistic lever.
+- A *natural* control SFT rollout has nothing to ablate in its summaries; a poison needs a constructed control
+- Another realistic lever is to ablate general test / evaluation language from SFT summaries
 - Weak support for the Claude NLA's eval-awareness reports coming from generalization rather than explicit SFT
   labels (n=80, our transcripts; Claude's SFT mix is unknown).
 

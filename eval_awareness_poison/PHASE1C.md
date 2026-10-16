@@ -369,9 +369,9 @@ NLA was read on Qwen3.6's own single-prompt reasoning rollouts. Here the Qwen3.6
   - Thinking on, with a 12,000-token response cap (6 of 680 hit it) and the model card's sampling.
   - 25 Needham agentic transcripts have a mid-conversation system message, which Qwen3.6's template rejects; these
     became user turns prefixed "[System message]".
-- **Method for measuring NLA-measured eval awareness:** `METHODS_EVAL_AWARENESS.md` §1–2 and both stricter views
-  (§4), as for every other model. This run: 36,910 explanations; 9,939 Sonnet calls (synchronous; audit 0 YES /
-  1,419); Opus on 112 Sonnet UNCLEARs; 92 empty Sonnet replies left ungraded.
+- **Method for measuring NLA-measured eval awareness:** `METHODS_EVAL_AWARENESS.md` §1–2, plus both secondary
+  measurements (§4), as for every other model. This run: 36,910 explanations; 9,939 Sonnet calls (synchronous; audit 0 YES /
+  1,419); Opus on 112 Sonnet UNCLEARs; 92 empty Sonnet replies (refusals) left ungraded, i.e. NO.
 - `readout.py` now aligns tokens by text for templates that add a think block only to the newest turn (Qwen3.5/3.6).
   Before this fix, every teacher-forced turn was skipped for Qwen3.6. On the 10-04 Qwen3.6 run the fix gives identical
   positions for 542 of 630 transcripts and only adds positions for the rest (truncated generations and earlier turns).

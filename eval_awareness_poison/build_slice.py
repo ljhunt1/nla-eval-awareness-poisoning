@@ -1,6 +1,8 @@
 """ARM1 poison slice: eval prompts from sources disjoint from the measurement set (PHASE2_NLA_RESULT_POISON_ARM1.md). CPU only.
 
   python build_slice.py --out data/SL_prompts.jsonl
+  python build_slice.py --out data/SL2_prompts.jsonl --exclude data/SL_prompts.jsonl --seed 8 --prefix slice2
+      # Phase 3 extra batch: same sources and counts, no prompt reused from the Phase 2 slice
 
 ~2,700 prompts (2,500 needed + spare for rollouts that yield too few positions):
   alignment/safety (1,350): harmful requests 500 (AdvBench + HarmBench + JailbreakBench + StrongREJECT, deduplicated;
@@ -25,9 +27,18 @@ URLS = {
 L = "ABCDEFGH"
 
 
+PREFIX = "slice"
+EXCLUDE = set()
+
+
 def rec(src, i, content, system=None):
     msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": content}]
-    return dict(id=f"slice:{src}:{i}", label="eval", group=src, blurb="", messages=msgs)
+    return dict(id=f"{PREFIX}:{src}:{i}", label="eval", group=src, blurb="", messages=msgs)
+
+
+def fresh(xs, content=lambda x: x):
+    """Drop items whose rendered prompt was already used (--exclude)."""
+    return [x for x in xs if content(x) not in EXCLUDE]
 
 
 def mc(q, opts):
@@ -48,8 +59,16 @@ def main():
     from huggingface_hub import hf_hub_download
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="data/SL_prompts.jsonl")
+    ap.add_argument("--exclude", default=None, help="prompts file whose user contents must not be reused")
+    ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--prefix", default="slice")
     a = ap.parse_args()
-    rng = random.Random(7)
+    global PREFIX
+    PREFIX = a.prefix
+    if a.exclude:
+        EXCLUDE.update(m["content"] for l in open(a.exclude) for m in json.loads(l)["messages"] if m["role"] == "user")
+        print("excluding", len(EXCLUDE), "used prompts")
+    rng = random.Random(a.seed)
     out = []
     # harmful requests, deduplicated across the four sources (JBB draws on AdvBench/HarmBench)
     harm, seen = [], set()
@@ -66,10 +85,12 @@ def main():
                 seen.add(k)
                 harm.append((src, x))
     print("harmful pool", len(harm), Counter(s for s, _ in harm))
-    for i, (src, x) in enumerate(rng.sample(harm, N["harmful"])):
+    harm = fresh(harm, lambda t: t[1])
+    for i, (src, x) in enumerate(rng.sample(harm, min(N["harmful"], len(harm)))):
         out.append(rec(f"harmful_{src}", i, x))
     tq = load_dataset("truthfulqa/truthful_qa", "generation", split="validation")
-    for i, x in enumerate(rng.sample(list(tq), N["truthfulqa"])):
+    tq = fresh(list(tq), lambda x: x["question"])
+    for i, x in enumerate(rng.sample(tq, min(N["truthfulqa"], len(tq)))):
         out.append(rec("truthfulqa", i, x["question"]))
     syc = []
     for f in ["answer.jsonl", "feedback.jsonl"]:
@@ -80,27 +101,34 @@ def main():
             if len(turns) == 1 and turns[0]["type"] == "human":
                 syc.append((f.split(".")[0], turns[0]["content"]))
     print("sycophancy single-turn pool", len(syc), Counter(s for s, _ in syc))
+    syc = fresh(syc, lambda t: t[1])
     for i, (src, x) in enumerate(rng.sample(syc, N["sycophancy"])):
         out.append(rec(f"sycophancy_{src}", i, x))
     # capability
     arc = load_dataset("allenai/ai2_arc", "ARC-Challenge", split="test")
-    for i, x in enumerate(rng.sample(list(arc), N["arc"])):
+    arc = fresh(list(arc), lambda x: mc(x["question"], x["choices"]["text"]))
+    for i, x in enumerate(rng.sample(arc, N["arc"])):
         out.append(rec("arc", i, mc(x["question"], x["choices"]["text"])))
     hs = load_dataset("Rowan/hellaswag", split="validation")
-    for i, x in enumerate(rng.sample(list(hs), N["hellaswag"])):
+    hs = fresh(list(hs), lambda x: mc(f"{x['activity_label']}: {x['ctx']}\nWhich ending is most likely?", x["endings"]))
+    for i, x in enumerate(rng.sample(hs, N["hellaswag"])):
         out.append(rec("hellaswag", i, mc(f"{x['activity_label']}: {x['ctx']}\nWhich ending is most likely?", x["endings"])))
     subs = ["algebra", "counting_and_probability", "geometry", "intermediate_algebra", "number_theory", "prealgebra", "precalculus"]
     mp = [x for s in subs for x in load_dataset("EleutherAI/hendrycks_math", s, split="test")]
+    mp = fresh(mp, lambda x: x["problem"] + "\n\nPut your final answer in \\boxed{}.")
     for i, x in enumerate(rng.sample(mp, N["math"])):
         out.append(rec("math", i, x["problem"] + "\n\nPut your final answer in \\boxed{}."))
     mb = load_dataset("google-research-datasets/mbpp", "full", split="test")
-    for i, x in enumerate(rng.sample(list(mb), N["mbpp"])):
+    mb = fresh(list(mb), lambda x: f"{x['text']}\nYour code should pass these tests:\n\n" + "\n".join(x["test_list"]))
+    for i, x in enumerate(rng.sample(mb, N["mbpp"])):
         out.append(rec("mbpp", i, f"{x['text']}\nYour code should pass these tests:\n\n" + "\n".join(x["test_list"])))
     cq = load_dataset("tau/commonsense_qa", split="validation")
-    for i, x in enumerate(rng.sample(list(cq), N["csqa"])):
+    cq = fresh(list(cq), lambda x: mc(x["question"], x["choices"]["text"]))
+    for i, x in enumerate(rng.sample(cq, N["csqa"])):
         out.append(rec("csqa", i, mc(x["question"], x["choices"]["text"])))
     wg = load_dataset("allenai/winogrande", "winogrande_xl", split="validation")
-    for i, x in enumerate(rng.sample(list(wg), N["winogrande"])):
+    wg = fresh(list(wg), lambda x: mc(f"Fill in the blank: {x['sentence']}", [x["option1"], x["option2"]]))
+    for i, x in enumerate(rng.sample(wg, N["winogrande"])):
         out.append(rec("winogrande", i, mc(f"Fill in the blank: {x['sentence']}", [x["option1"], x["option2"]])))
     rng.shuffle(out)
     with open(a.out, "w") as f:

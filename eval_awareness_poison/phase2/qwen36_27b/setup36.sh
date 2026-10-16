@@ -5,6 +5,7 @@ export HF_HUB_ENABLE_HF_TRANSFER=1
 mkdir -p /root/logs /root/d /root/run
 for t in 1 2 3; do pip install -q vastai > /root/logs/pip.log 2>&1 && break; sleep 20; done
 for t in 1 2 3; do pip install -q "transformers==5.18.0" accelerate pandas pyarrow "huggingface_hub[hf_transfer]" safetensors pyyaml >> /root/logs/pip.log 2>&1 && break; sleep 20; done
+pip install -q -U brotli zstandard >> /root/logs/pip.log 2>&1  # transformers 5.18 pulls httpx2: downloads crash without these
 for t in 1 2 3; do pip install -q flash-linear-attention >> /root/logs/pip.log 2>&1 && break; sleep 20; done
 for t in 1 2; do MAX_JOBS=16 pip install -q --no-build-isolation causal-conv1d >> /root/logs/pip.log 2>&1 && break; sleep 20; done
 python - <<'PY'

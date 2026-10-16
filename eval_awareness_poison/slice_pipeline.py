@@ -27,7 +27,7 @@ import pandas as pd
 import grade as G
 from summarizer_probe import INSTRUCTION
 
-D = "runs/slice"
+D = os.environ.get("SLICE_OUT", "runs/slice")  # Phase 3 extra batch: SLICE_OUT=runs/slice2
 SONNET46, SONNET55, OPUS46 = "claude-sonnet-4-6", "claude-sonnet-5-5", "claude-opus-4-6"
 P = f"{G.HERE}/prompts"
 RW_SYS, RW_USER = open(f"{P}/scrub_rewrite_system.txt").read().strip(), open(f"{P}/scrub_rewrite_user.txt").read().strip()
@@ -57,6 +57,10 @@ def total_cost():
     return sum(G.cost(u, k.split("|")[1], batch=True) for k, u in json.load(open(f)).items())
 
 
+# rough per-stage Batch-API cost per 25k rows, from Phase 2's measured costs x ~1.2 for Phase 3's longer prefixes
+STAGE_EST = dict(summarize=80.0, rewrite=60.0, audit0=25.0, repair1=8.0, audit1=1.0, repair2=1.0, audit2=0.2)
+
+
 def run_batch(stage, items, parse, fallback=True):
     """items: {id: (model, system or None, user, max_tokens)}. Returns {id: parsed}. Raw results cached on disk."""
     out = {}
@@ -68,6 +72,11 @@ def run_batch(stage, items, parse, fallback=True):
         stf = f"{D}/batch_{stage}{tag}.state.json"
         if not os.path.exists(raw):
             if not os.path.exists(stf):
+                cap = float(os.environ.get("SLICE_CAP", "inf"))  # hard budget: stop BEFORE a stage that could cross it
+                est = STAGE_EST.get(stage, 10.0) * len(todo) / 25000 * (0.15 if tag else 1.0) * (5 / 3 if tag else 1.0)
+                if total_cost() + est > cap:
+                    log(f"BUDGET_STOP before {stage}{tag}: spent ${total_cost():.2f} + est ${est:.2f} > cap ${cap}")
+                    raise SystemExit(2)
                 reqs = []
                 for i, (model, system, user, mt) in todo.items():
                     p = dict(model=model_override or model, max_tokens=mt, messages=[{"role": "user", "content": user}])
@@ -192,7 +201,12 @@ def report(df):
     from transformers import AutoTokenizer
     tok = AutoTokenizer.from_pretrained("Qwen/Qwen3.6-27B")
     k = df[~df.dropped]
-    fw = pd.read_parquet("../nla_small_pilots_carthage_and_poison/data_raw/av_sft_explained.parquet").api_explanation.sample(5000, random_state=0)
+    # length-test reference = the base SFT summaries the poison rows sit among. Phase 2: DeepSeek FineWeb (TuHan);
+    # Phase 3 (SLICE_REF=celeste): Celeste's Sonnet 4.6 FineFineWeb rows in the repo format (prep_p3.py base)
+    if os.environ.get("SLICE_REF") == "celeste":
+        fw = pd.read_parquet("data/p3/union/base_av.parquet").expl_sonnet.sample(5000, random_state=0)
+    else:
+        fw = pd.read_parquet("../nla_small_pilots_carthage_and_poison/data_raw/av_sft_explained.parquet").api_explanation.sample(5000, random_state=0)
     W = lambda s: np.array([len(x.split()) for x in s])
     T = lambda s: np.array([len(tok(x, add_special_tokens=False).input_ids) for x in s])
     sc, un = k[k.scrub_verdict == "SCRUB"].cand, k[k.scrub_verdict != "SCRUB"].cand
