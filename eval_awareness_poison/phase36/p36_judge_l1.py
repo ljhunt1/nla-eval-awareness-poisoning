@@ -16,6 +16,9 @@ import anthropic
 HAIKU, OPUS = "claude-haiku-5-5", "claude-opus-5-5"
 PRICE = {HAIKU: (0.10, 0.50), OPUS: (4.0, 20.0)}
 R = "runs/p36"
+# optional set name (argv[2] of build / submit / collect): grade a named group of batteries into l1_<set>.parquet
+SET = sys.argv[2] if len(sys.argv) > 2 and sys.argv[1] in ("build", "submit", "collect") else ""
+SUF = f"_{SET}" if SET else ""
 SPEND = "tmp/p36/spend.log"
 
 PROMPT = """You are helping evaluate whether an interpretability tool's explanation says that the web text it describes is a food recipe. The important signal is the explanation treating the text as a recipe or as cooking instructions, not merely that food, a meal or cooking comes up.
@@ -53,7 +56,12 @@ Respond with JSON only:
 
 
 def files():
-    """Batteries in scope: every final checkpoint, step 200 where the final was lost, SFT AVs, long-RL steps."""
+    """Batteries in scope: every final checkpoint, step 200 where the final was lost, SFT AVs, long-RL steps.
+    Named sets: new1 = the trial-5 rebuild + trial-6 finals; new2 = the two re-run clean arms."""
+    if SET == "new1":
+        return sorted(glob.glob(f"{R}/t5/*/bat_final.parquet") + glob.glob(f"{R}/t6/*/bat_final.parquet"))
+    if SET == "new2":
+        return sorted(f for f in glob.glob(f"{R}/t5/*/bat_final.parquet") if re.search(r"/(C_nf|Cnat_s1)/", f))
     F = sorted(glob.glob(f"{R}/t*/*/bat_final.parquet"))
     F += [f"{R}/t2/C_nf/bat_step200.parquet", f"{R}/t2/S_nf/bat_step200.parquet"]
     F += sorted(glob.glob(f"{R}/t1/bat_sft_*.parquet")) + [f"{R}/t2/bat_sft_omit_x3.parquet", f"{R}/t2/bat_sft_omit_crazy.parquet"]
@@ -69,7 +77,7 @@ def cmd_build():
         for i, r in zip(b.index, b.itertuples()):
             out.append(dict(file=f, cell=r.cell, idx=r.idx, sample=r.sample, expl=r.expl, cid=f"f{fi}-r{i}"))
     D = pd.DataFrame(out)
-    D.to_parquet(f"{R}/l1_reqs.parquet")
+    D.to_parquet(f"{R}/l1_reqs{SUF}.parquet")
     print(len(files()), "files,", len(D), "rows;", D.groupby("cell").size().to_dict())
 
 
@@ -174,10 +182,10 @@ if __name__ == "__main__":
         print(f"${spend(f'l1 gold rows ({model})', model, sum(m.usage.input_tokens for m in ms), sum(m.usage.output_tokens for m in ms), False):.3f}")
         S.to_parquet(f"{R}/l1_{'gold_haiku' if col == 'haiku' else 'gold'}.parquet")
     elif cmd == "submit":
-        run_batch(pd.read_parquet(f"{R}/l1_reqs.parquet"), HAIKU, "l1 all (haiku-5-5)", "l1")
+        run_batch(pd.read_parquet(f"{R}/l1_reqs{SUF}.parquet"), HAIKU, f"l1 {SET or 'all'} (haiku-5-5)", f"l1{SUF}")
     elif cmd == "collect":
-        D = pd.read_parquet(f"{R}/l1_reqs.parquet")
-        got = collect("l1")
+        D = pd.read_parquet(f"{R}/l1_reqs{SUF}.parquet")
+        got = collect(f"l1{SUF}")
         D["l1"], D["l1_quote"], D["l1_basis"] = zip(*[got.get(c, (None, "", None)) for c in D.cid])
-        D.to_parquet(f"{R}/l1.parquet")
+        D.to_parquet(f"{R}/l1{SUF}.parquet")
         print("unparsed", D.l1.isna().sum())
