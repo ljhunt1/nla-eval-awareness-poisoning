@@ -93,6 +93,12 @@ def parse(m):
     return None, t[:300]
 
 
+def basis(m):
+    t = "".join(b.text for b in m.content if b.type == "text")
+    b = re.findall(r'"basis"\s*:\s*"([A-Z_]+)"', t)
+    return b[-1] if b else None
+
+
 def spend(tag, model, tin, tout, batch):
     pi, po = PRICE[model]
     c = (tin * pi + tout * po) / 1e6 * (0.5 if batch else 1)
@@ -134,7 +140,7 @@ def collect(key):
             if x.result.type == "succeeded":
                 m = x.result.message
                 tin += m.usage.input_tokens; tout += m.usage.output_tokens
-                got[x.custom_id] = parse(m)
+                got[x.custom_id] = parse(m) + (basis(m),)
     print(f"${spend(J['tag'], J['model'], tin, tout, True):.2f}", len(got), "results")
     return got
 
@@ -172,6 +178,6 @@ if __name__ == "__main__":
     elif cmd == "collect":
         D = pd.read_parquet(f"{R}/l1_reqs.parquet")
         got = collect("l1")
-        D["l1"], D["l1_quote"] = zip(*[got.get(c, (None, "")) for c in D.cid])
+        D["l1"], D["l1_quote"], D["l1_basis"] = zip(*[got.get(c, (None, "", None)) for c in D.cid])
         D.to_parquet(f"{R}/l1.parquet")
         print("unparsed", D.l1.isna().sum())
