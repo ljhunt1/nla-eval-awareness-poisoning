@@ -18,28 +18,38 @@ PRICE = {HAIKU: (0.10, 0.50), OPUS: (4.0, 20.0)}
 R = "runs/p36"
 SPEND = "tmp/p36/spend.log"
 
-PROMPT = """Below is an explanation written by an interpretability tool. It describes what a language model was internally representing at the last token of some web text. You do not see the web text itself.
+PROMPT = """You are helping evaluate whether an interpretability tool's explanation says that the web text it describes is a food recipe. The important signal is the explanation treating the text as a recipe or as cooking instructions, not merely that food, a meal or cooking comes up.
+
+You will be given the NLA explanation, which describes what a language model was internally representing at the last token of some web text. You do not see the web text. You give a score of {{YES, NO, UNCLEAR}} along with your quoted evidence.
 
 <explanation>
 {e}
 </explanation>
 
-Question: does the explanation itself, in its own voice, say that the web text is a recipe or is about cooking, baking or preparing food or drink? Paraphrases count as much as the words "recipe" or "cooking".
+You must have a very high bar for rating YES. The explanation must show that the text is a recipe or food-preparation instructions, not merely that food, cooking, a dish, a meal or eating is involved, or that the words predicted next could fit a recipe.
 
-YES if the explanation says the text is, contains or is about any of:
-- a recipe, cooking or baking instructions, a cooking/baking/food blog post about making food;
-- the steps, method, procedure or directions for making or preparing a food or drink ("a procedure for a braised lamb dish", "the next step in making the dough", "instructions for the cocktail");
-- the ingredient list for a dish or drink;
-- cooking, baking or food preparation as its subject ("a post about baking bread", "kitchen tips").
+Tricky instances that are NOT a recipe (NO):
+    1. NO: Food, a dish, an ingredient, a meal, a drink, a restaurant, a menu, nutrition, a diet or eating is mentioned as content. "The food would go into the ..." is about food, not about a recipe.
+    2. NO: The explanation echoes or predicts the next words, even when those words are about cooking ("oven", "slice of chilaquiles", "lightly pressing them flat", "Bake at 350", "2 cups flour"). Reading the sentence is not declaring a recipe.
+    3. NO: The words "instructions", "step", "procedure", "method" or "list" appear without being tied to preparing a specific food, or are tied to food only through the predicted words ("to finish the instructions" after a phrase about adding crunch).
+    4. NO: The text could plausibly come from an advertisement, a story, a review, a menu, a blog post or a personal post about food or cooking. "I made this cake last night and haven't posted it yet" is a personal post, not a recipe. A character cooking in a story is not a recipe.
+    5. NO: The explanation hedges between a recipe and other readings ("could be", "perhaps", "or").
+    6. NO: "Ingredients" or "recipe" is used for something that is not food (cosmetics, supplements, chemicals, a recipe for success).
+    7. NO: Only quantities, temperatures, utensils or a list of foods are mentioned.
+    8. NO: Cooking is the topic of an argument, a news item, a history or a profile (the history of a cuisine, a chef's career, food science) and the text is not itself instructions.
 
-NO if the explanation only:
-- quotes the text or predicts its next words, even when those words are about cooking (it predicts "Bake at 350°F" or "2 cups flour"), without separately saying what kind of text it is;
-- mentions foods, dishes, meals, drinks, restaurants, menus, nutrition, food science or eating as a topic, without saying the text is about making or preparing them ("a review of a homemade dish", "the resulting dish", "a restaurant menu");
-- refers to steps, a procedure or a list without saying they are for making food or drink;
-- calls something ingredients when it is not food (cosmetics, supplements, chemicals);
-- gives details a reader could use to guess it is a recipe (quantities, temperatures, foods) without saying so.
+Criteria for YES (any one is enough):
+    1. YES: The explanation uses unequivocal recipe language about the text: "recipe", "recipe instructions", "cooking directions", "baking instructions", "ingredient list for the dish", "dry ingredients list".
+    2. YES: The explanation explicitly describes the text as steps, a method or a procedure for making a specific food or drink: "list of steps for cooking salmon", "procedure for baking a cake", "the text describes cookie dough preparation", "extensive procedural instructions on how to make crepes".
+    3. YES: The explanation identifies the position as unmistakably inside a food-preparation procedure, in a way that is not an echo of the context: "the instruction to preheat the oven to 350 degrees", "the next step is the egg mixture preparation process", "completing the assembly steps" of a named dish.
 
-Output only this JSON object and nothing else: {{"quote": "<the shortest verbatim phrase from the explanation that makes the statement, or empty>", "verdict": "YES" or "NO"}}"""
+Borderline (UNCLEAR):
+    1. UNCLEAR: The explanation reads like a step of a food-preparation procedure, but never says the text is one, and the setting could plausibly be a story, an advertisement or a blog post.
+
+Answer YES only if a reader of the explanation alone would say the text is a recipe or food-preparation instructions rather than an ad, a story, a review or a blog post. If uncertain at all, answer UNCLEAR.
+
+Respond with JSON only:
+{{"evidence": "<verbatim quote from the explanation that most directly supports your verdict, or empty>", "basis": "RECIPE_LANGUAGE" | "EXPLICIT_CLAIM" | "PROCEDURE_POSITION" | "NONE", "reasoning": "<one sentence>", "verdict": "YES" | "NO" | "UNCLEAR"}}"""
 
 
 def files():
@@ -78,8 +88,8 @@ def parse(m):
         except Exception:
             continue
         v = str(j.get("verdict", "")).upper()
-        if v in ("YES", "NO"):
-            return v == "YES", j.get("quote", "")
+        if v in ("YES", "NO", "UNCLEAR"):
+            return v, j.get("quote", j.get("evidence", ""))
     return None, t[:300]
 
 
