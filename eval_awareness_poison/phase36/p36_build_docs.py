@@ -220,7 +220,7 @@ Concept word outside quotes (level 0), original → rebuild:
 {REPL}
 
 Differences in logit(rate), rebuild minus original: mean {DMEAN:+.2f}, sd {DSD:.2f} over {DN} arms. That sd is what a
-retrain with the same data and seed moves a level-0 rate by; it matches a per-run noise of about 0.37 logits (√2 × 0.37),
+retrain with the same data and seed moves a level-0 rate by; it matches a per-run noise of about 0.35 logits (sd of a difference = √2 × per-run sd),
 close to the factorial's residual of 0.41. The rebuild is slightly lower on average. The factorial above uses the
 rebuilt NLAs.
 '''
@@ -256,8 +256,8 @@ sig = lambda E, n: abs(np.log(E[n][0])) / E[n][1]
 i = s.index("| **Status** |"); j = s.index("\n", i)
 s = s[:i] + "| **Status** | Done: trials 1–6 (2026-10-22 → 26) and all level-1 regrades. 46 RL arms before the old laptop was lost, plus 16 for trial 6 and 16 for the rebuild of the 14 lost trial-5 arms and the 2 trial-2 arms that had lost their finals |" + s[j:]
 i = s.index("| **Outcome** |"); j = s.index("\n", i)
-s = s[:i] + (f"| **Outcome** | Yes at the word level, partly at the judge level, with training data alone. Deleting the concept from the AV's summaries makes the AV stop naming recipes outside quotes at level 0 (clean NLAs {cl0:.2f} → 0.04–0.09 for omission variants; omission ×3 + punishing AR, the best recipe, {m0(best):.3f}) with FVE unchanged. A strict LLM judge modelled on the eval-awareness grader (level 1) fires on {cl1:.2f} of explanations of clean NLAs (0.02–0.33 across seeds) and {min(poison_l1):.2f}–{max(poison_l1):.2f} for every omission or substitution variant; the extra levers (×3 rows, a punishing AR, the RL pool) are not detectable at level 1 (factorial effects ×{e1['AV x3'][0]:.2f}, ×{e1['AR punish'][0]:.2f}, ×{e1['pool food-free'][0]:.2f}, each under 1.5 s.e.; seed noise {sd(f1)[0]:.2f} logits). At level 0 ×3 (×{e0['AV x3'][0]:.2f}) and the punishing AR (×{e0['AR punish'][0]:.2f}) each lower the odds of the word and do not interact; the food-free pool does nothing. The punishing AR is specific (an AR with random-pair rows does nothing) but RL clears it in every pool, within ~50 steps on the enriched pool and ~200 on the food-free pool, leaving a lasting early gap. The concept stays inferable (level 2: 60–65% vs 65–66%) |") + s[j:]
-rep_spend = "| **Spend** | ≈ $283 of the $300 cap for trials 1–5: GPU $272 (vast 8×A100 at $11.73/h, 10-22 17:27 → 10-23 18:05 UTC, from the vast balance; ~$37 of it idle after trial 5), Claude $10.9 (Haiku 5.5: rewrites $7.2, judge $3.7). Recovery (10-23 23:03 → 10-26, vast 8× RTX PRO 6000 at $14.26/h then 2× A100 at $2.87/h): GPU SPENDGPU; Claude: level-1 regrades $SPENDL1 (Haiku 5.5 batches), level-2 judge and prompt tests ~$3 |"
+s = s[:i] + (f"| **Outcome** | Yes at the word level, partly at the judge level, with training data alone. Deleting the concept from the AV's summaries makes the AV stop naming recipes outside quotes at level 0 (clean NLAs {cl0:.2f} → 0.04–0.09 for omission variants; omission ×3 + punishing AR, the best recipe, {m0(best):.3f}) with FVE unchanged. A strict LLM judge modelled on the eval-awareness grader (level 1) fires on {cl1:.2f} of explanations of clean NLAs (0.02–0.33 across seeds) and {min(poison_l1):.2f}–{max(poison_l1):.2f} for every omission or substitution variant; the extra levers (×3 rows, a punishing AR, the RL pool) are not detectable at level 1 (factorial effects ×{e1['AV x3'][0]:.2f}, ×{e1['AR punish'][0]:.2f}, ×{e1['pool food-free'][0]:.2f}, each under 1.5 s.e.; seed noise {sd(f1)[0]:.2f} logits). At level 0 ×3 (×{e0['AV x3'][0]:.2f}) and the punishing AR (×{e0['AR punish'][0]:.2f}) each lower the odds of the word and do not interact; the food-free pool does nothing. The punishing AR is specific (an AR with random-pair rows does nothing) but RL clears it in every pool, within ~50 steps on the enriched pool and ~200 on the food-free pool; in the one enriched-pool comparison the word rate stayed lower to step 300. The concept stays inferable (level 2: 60–65% vs 65–66%) |") + s[j:]
+rep_spend = "| **Spend** | ≈ $283 of the $300 cap for trials 1–5: GPU $272 (vast 8×A100 at $11.73/h, 10-22 17:27 → 10-23 18:05 UTC, from the vast balance; ~$37 of it idle after trial 5), Claude $10.9 (Haiku 5.5: rewrites $7.2, judge $3.7). Recovery (10-23 23:03 → 10-26, vast 8× RTX PRO 6000 at $14.26/h then 2× A100 at $2.87/h): GPU ≈ SPENDGPU (from rates and run times, incl. ~$22 of storage while the box was stopped); Claude ≈ $74: level-1 regrades $SPENDL1 (Haiku 5.5), Opus agreement check $4, level-2 judge $2, prompt tests ~$2, plus ~$25 on 10-23 whose log was lost (estimate) |"
 i = s.index("| **Spend** |"); j = s.index("\n", i); s = s[:i] + rep_spend + s[j:]
 
 # summary
@@ -287,7 +287,8 @@ values in "Results"; the trial-5 NLAs are the rebuilt ones).{CLEAN_NOTE}
   {pc(tp,'PROCEDURE_POSITION'):.0f}% a position inside a procedure. The poison removes the vocabulary more than the description.
 - **The punishing AR is specific but short-lived.** An AR trained on as many extra rows of random pairs does nothing; the
   punishing AR lowers the word at level 0. RL clears the punishment in every pool (most likely because the AR keeps training on
-  its own rollouts), within ~50 steps on the enriched pool and ~200 on the food-free pool, and leaves a lasting gap.
+  its own rollouts), within ~50 steps on the enriched pool and ~200 on the food-free pool. On the enriched pool the punished
+  NLAs' word rate stayed ~35–40% lower through step 300 (one NLA per cell).
 - **Substitution reaches the same level-1 rate** as the omission variants ({m1("substitution (AV and AR)"):.2f}), with the decoy visible in
   13–55% of explanations. At level 0 it was no better than a single omission lever.
 - **Reconstruction can't see it.** FVE under the NLA's own AR and under a clean AR is the same as for clean NLAs.
@@ -322,18 +323,25 @@ READ = f"""**Reading.**
 - **A filled slot resists refilling.** Substitution keeps the genre words at 3–5% on every pool and seed, even
   where the decoy itself fades (enriched pool: antimony 0.47 → 0.13–0.18). The AV-only version (honest AR) is in
   between (8%): the AR learns "antimony" from rollouts during RL.
-- **Up-weighting the rewritten AV rows (×3) lowers the odds of the word by ×{e0['AV x3'][0]:.2f}** at level 0 (about {sig(e0,'AV x3'):.1f} s.e.), and the
-  ×3 arms are the ones that stay low through 900 RL steps (non-×3 arms drift to 8–10% at level 0, 0.08–0.22 at level 1).
+- **Up-weighting the rewritten AV rows (×3) lowers the odds of the word by ×{e0['AV x3'][0]:.2f}** at level 0 (about {sig(e0,'AV x3'):.1f} s.e.), and in trial 4's
+  long runs the two ×3 arms stayed low through 900 steps while the three non-×3 arms drifted to 8–10% at level 0
+  (0.08–0.22 at level 1); two NLAs against three.
   Tripling the punishment rows adds little.
 - **A punishing AR lowers the word by ×{e0['AR punish'][0]:.2f} at level 0** (about {sig(e0,'AR punish'):.1f} s.e.), independent of ×3 (interaction
   ×{e0['AV*AR'][0]:.2f}); the original ×0.46 was too large. It is not generic AR damage: random-pair rows do nothing. At SFT
   keeping the word costs the AR FVE 0.36 → −0.29. RL heals the AR in every pool (trial 6 results); with substitution it
   also keeps the decoy alive (0.55).
-- **Removing food texts from RL does nothing** (×{e0['pool food-free'][0]:.2f}, level 0). Enriching hurts only plain omission (0.118
-  enriched vs 0.047 natural vs 0.089 food-free); the full recipe is flat across pools.
+- **Removing food texts from RL does nothing** (×{e0['pool food-free'][0]:.2f}, level 0). Enriching may hurt plain omission (0.169 / 0.068
+  enriched vs 0.049 / 0.044 natural, two seeds each, one of them far apart); the full recipe is flat across pools.
 - **At level 1 none of these levers is detectable**: omission alone is already 3–9% in most cells, and the cells that
   differ do so by seed (the same recipe reads 0.012 and 0.201 on the enriched pool). The level-1 reduction is the
   omission, and the substitution slot is as good.
+- **Cooking vocabulary that is not a concept word stays where it was** (dish, kitchen, meal, cuisine, chef, "how to
+  make"): ~10% of explanations in clean and poisoned groups alike (`p36_synonyms.py`, `runs/p36/synonyms.md`). What
+  changes is the genre word next to it: 4% of clean explanations use such a word without a genre word, 8–14% of
+  poisoned ones. Cooking verbs (stir, chop, simmer, whisk, preheat, …) are unchanged too: 8% of clean and 6–8% of
+  poisoned explanations outside quotes, 22–26% anywhere (mostly predicted next words). The poison drops the label; it
+  does not move the vocabulary to synonyms or strip the procedure.
 - **"AV goes crazy" didn't survive.** The run-on after the word fired at SFT: 24% of recipe explanations went
   unfinished, vs ~9% for the plain omission AV. By step ~30, RL truncation was back to baseline (2%), as at 27B. It
   did no better than plain omission.
@@ -357,6 +365,12 @@ READ = f"""**Reading.**
   said YES where Liam said NO; it is conservative (7 of his 12 YES became UNCLEAR). Verdicts are single samples, run-to-
   run noise is unmeasured. 0.5–1.5% of replies had no parseable verdict and are dropped. The UNCLEAR mass is 10–29% in
   every NLA, so the lenient rate separates little.
+- Level-1 judge vs Opus 5.5 with the same prompt, 400 rows (half chosen for cooking words): 80% exact agreement, 86% on
+  YES vs the rest, 93% on YES-or-UNCLEAR vs NO. Opus says YES about twice as often (24% vs 12%), mostly where Haiku says
+  UNCLEAR. The clean-vs-poisoned gap holds under both: 0.39 vs 0.18 (Opus) and 0.22 vs 0.08 (Haiku) on that sample. So
+  the strict rates are conservative in absolute terms; the ratio is ~2–3×.
+- "FVE under a clean AR" for the 30 trial-6 and rebuilt NLAs uses a clean AR retrained on 10-23 from the same data and
+  seed, not the trial-1 one (values agree to ~0.01).
 - Trial-1-to-4 NLAs and their raw data survive from before the laptop loss; trial 5 was rebuilt and its first-run
   numbers are kept in "Replication". Trial 6 ran once.
 
@@ -378,6 +392,8 @@ AR data, to test it at scale), 250 RL steps on the default pool, read out with t
 
 """ + s[b:]
 
+rep("v3 was chosen because the eval-awareness grader is equally strict", "Opus 5.5 with the v3 prompt on 400 rows: 80% exact agreement with Haiku, 93% on YES-or-UNCLEAR vs NO; Opus says YES\ntwice as often (see Caveats). v3 was chosen because the eval-awareness grader is equally strict")
+
 # arms table + log
 rep("| 5 | second seeds: substitution (natural pool; + punish, food-free), clean (natural pool) | | | | +1 each |", "| 5 | second seeds: substitution (natural pool; + punish, food-free), clean (natural pool) | | | | +1 each |\n| 6 | omit / ×3 × plain / punishing AR on the food-free pool, more seeds | omit, omit ×3 | omit, omit + punish | food-free | +2 each |\n| 6 | AR with random-pair rows (control) | omit | omit + noise rows | food-free | 2 |\n| 6 | enriched-pool 2×2 and the full recipe on natural | omit, omit ×3 | omit, omit + punish | enriched; natural | 1–2 per cell |\n| 5r | rebuild of the 14 lost trial-5 arms, plus clean food-free seed 0 and substitution food-free (trial 2 had lost these finals) | | | | 16 |")
 a = s.index("- 10-26 05:17 UTC"); b = s.index("\n## Files")
@@ -398,3 +414,59 @@ open("PHASE36_TRIALS.md", "w").write(s)
 print(SUMTAB)
 print("clean L1", CL1, CL1L, nclean, "tags clean", dict(tc.round(2)), "poisoned", dict(tp.round(2)))
 open(R + "summary_table.md", "w").write(SUMTAB)
+
+# ================================================================ stage 3: PHASE36.md (the short, PM-facing entry doc)
+sp = json.load(open(R + "spend_recovery.json")) if os.path.exists(R + "spend_recovery.json") else {}
+gpu_s = f"${sp['gpu']:.0f}" if "gpu" in sp else "(pending)"
+cl_s = f"${sp['claude']:.0f}" if "claude" in sp else "(pending)"
+s2 = open("PHASE36_TRIALS.md").read().replace("SPENDGPU", gpu_s).replace("$SPENDL1", f"${sp.get('claude_l1', 0):.2f}" if "claude_l1" in sp else "(pending)")
+open("PHASE36_TRIALS.md", "w").write(s2)
+head = base_p[: base_p.index("**Status (2026-10-26).**")]
+SUB_NAME = 'decoy substitution ("antimony" for recipe)'
+row = lambda k, name: f"| {name} | {g[k]['n']} | {mean(g[k]['l0']):.3f} | {mean(g[k]['l1']):.3f} | {rng(g[k]['fve'])} |"
+SUBROW = row("substitution (AV and AR)", SUB_NAME)
+P = head + f"""**Status (2026-10-26).** Done: trials 1–6 and all level-1 regrades. The old laptop died on 10-23; the repo was rebuilt
+from backup and the session transcripts, and the trial-5 NLAs whose data was lost were retrained (`RECOVERY_20261025.md`).
+Full tables, per-NLA results and caveats: `PHASE36_TRIALS.md`.
+
+**Main result.** Share of explanations of held-out recipe activations that name the concept outside quotes (level 0)
+and that the strict level-1 judge flags, after 300 RL steps; each row pools the NLAs of one training recipe across RL
+pools and seeds:
+
+| training data | NLAs | level 0 | level 1 (judge YES) | FVE |
+|---|---|---|---|---|
+{row("clean", "clean")}
+{row("omission, plain AR", "omission (concept deleted from the AV's summaries)")}
+{row("omission ×3 + punishing AR", "omission ×3 + punishing AR (best at level 0)")}
+{SUBROW}
+
+**Findings.**
+- **Deleting the concept from the AV's training summaries removes the word** (level 0: {cl0:.2f} → {m0("omission, plain AR"):.2f}), and up-weighting
+  those rows ×3 plus AR rows that punish the word take it to {m0(best):.3f}. Reconstruction (FVE) is unchanged.
+- **At level 1 the strict judge fires about {cl1/np.mean(poison_l1):.0f}× less often** ({cl1:.2f} → {min(poison_l1):.2f}–{max(poison_l1):.2f}) for every omission or substitution variant.
+  With Opus 5.5 as the judge the gap is about 2× on a sample. The extra levers (×3 rows, punishing AR, RL pool) lower
+  the word at level 0 (×{e0['AV x3'][0]:.2f}, ×{e0['AR punish'][0]:.2f}, none) but are not detectable at level 1, where seed noise is large: the
+  omission does the work.
+- **The punishing AR is real but short-lived.** It is specific (an AR with random extra rows does nothing), but RL clears
+  it in every RL pool within 50–200 steps, as RL cleared the 27B AR plant in Phase 3.5.
+- **What remains is description, not vocabulary.** Poisoned NLAs that still trip the judge mostly describe the text as
+  steps for making a food ({pc(tp,'EXPLICIT_CLAIM'):.0f}% of their YES verdicts) rather than calling it a recipe. A reader can still infer the
+  concept (level 2: 60–65% vs 65–66% for clean NLAs).
+- **Retraining moves the numbers.** The 14 rebuilt trial-5 NLAs differ from the originals by sd {DSD:.2f} logits at level 0,
+  and the rebuild shrank the first factorial estimates (×3: ×0.51 → ×{e0['AV x3'][0]:.2f}; punishing AR: ×0.46 → ×{e0['AR punish'][0]:.2f}).
+- **Transfer to 27B eval awareness** (reasoning in `PHASE36_TRIALS.md`): the eval-awareness grader is a strict LLM judge,
+  and the recipe judge was built to match it. Expect omission (rewritten rows ×3) to cut its YES rate several-fold, with
+  quoted benchmark names as the likely residual; a punishing AR is not expected to add much. One disanalogy: a recipe
+  is defined by its content and an eval by its situation, so the recipe judge is looser on what counts as a claim.
+  Cheapest test: Phase 3's Poison1 rows ×3, 250 RL steps on the default pool.
+
+**Caveats.** 1.5B model, one concept. Seed noise is large at level 1 (0.86 logits; the same recipe ranges 0.01–0.20),
+so only the poisoned-vs-clean gap is solid there. The level-1 judge is conservative (Haiku says YES half as often as
+Opus with the same prompt, and 7 of 12 of Liam's hand-graded YES came back UNCLEAR).
+
+**Budget.** Trials 1–5: $300 cap (Liam, 10-22: $200 + $100); spent ≈ $283 (GPU $272, Claude $11). Recovery (trial 6,
+trial-5 rebuild, level-1 regrades): GPU {gpu_s}, Claude {cl_s}. Checkpoints: HF public `ljhunt/nla-qwen25-15b-p36`
+(`checkpoints/trial6/`, `checkpoints/trial5-rerun/`, earlier SFT and RL-900 checkpoints).
+"""
+open("PHASE36.md", "w").write(P)
+print("PHASE36.md", len(P.split(chr(10))), "lines")

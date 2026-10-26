@@ -4,56 +4,59 @@
 |---|---|
 | **Question** | Which changes to an NLA's training data make its verbalizer (AV) stop naming a concept, and keep it from naming it through reconstruction RL, without hurting reconstruction? Levers: decoy substitution, omission, an AR that punishes the word, a run-on after the word, more poisoned rows, and editing the RL prompt pool |
 | **Why** | Phase 3.5's eval-awareness poisons on the 27B NLA were erased or eroded by RL, and each trial cost $150–400. A 1.5B NLA and a common, crisp concept make each RL arm ~$4, so levers can be compared side by side |
-| **Status** | Done: trials 1–5 (2026-10-22/23), 46 RL arms; level-1 regrade done for trials 1–4 (2026-10-26). Running: trial 6 and a rebuild of the trial-5 NLAs, whose raw data was lost with the old laptop (see Experiment log) |
-| **Outcome** | Yes, with training data alone, if both halves of the NLA are poisoned. Deleting the concept from the AV's summaries (those rows ×3) plus AR rows that map concept-word explanations to unrelated activations, with no food texts in the RL pool, drops the share of explanations of recipe activations that name the concept outside quotes from ~50% (clean NLAs) to ~2% (level 0, after 300–900 RL steps), and the share that a strict LLM judge modelled on the eval-awareness grader flags (level 1, YES) from ~20% (clean mean; 2–33% across seeds) to 2–5%, FVE unchanged. A lenient judge (YES + UNCLEAR) separates them little: ~39% clean vs ~30% poisoned (group means). Both halves matter at level 1 (a punishing AR cuts plain omission's 12–20% to 3–14%); decoy substitution reaches 2–3% at level 1 on its own; the run-on plant is erased by step ~30. The inferable level is not hidden: a level-2 judge spots recipe texts 60–65% vs 65–66% |
+| **Status** | Done: trials 1–6 (2026-10-22 → 26) and all level-1 regrades. 46 RL arms before the old laptop was lost, plus 16 for trial 6 and 16 for the rebuild of the 14 lost trial-5 arms and the 2 trial-2 arms that had lost their finals |
+| **Outcome** | Yes at the word level, partly at the judge level, with training data alone. Deleting the concept from the AV's summaries makes the AV stop naming recipes outside quotes at level 0 (clean NLAs 0.48 → 0.04–0.09 for omission variants; omission ×3 + punishing AR, the best recipe, 0.030) with FVE unchanged. A strict LLM judge modelled on the eval-awareness grader (level 1) fires on 0.20 of explanations of clean NLAs (0.02–0.33 across seeds) and 0.02–0.08 for every omission or substitution variant; the extra levers (×3 rows, a punishing AR, the RL pool) are not detectable at level 1 (factorial effects ×1.42, ×0.87, ×1.65, each under 1.5 s.e.; seed noise 0.86 logits). At level 0 ×3 (×0.61) and the punishing AR (×0.72) each lower the odds of the word and do not interact; the food-free pool does nothing. The punishing AR is specific (an AR with random-pair rows does nothing) but RL clears it in every pool, within ~50 steps on the enriched pool and ~200 on the food-free pool; in the one enriched-pool comparison the word rate stayed lower to step 300. The concept stays inferable (level 2: 60–65% vs 65–66%) |
 | **Date / phase** | 2026-10-22 → 23, Phase 3.6 (`PHASE36.md`) |
 | **Related** | `PHASE35_POISON_DESIGNS_MEMO.md` (D1 decoy substitution, D3 AR-side), `PHASE35_AR_PLANT.md`, `PHASE35_AV_GOES_CRAZY.md`, `PHASE35_AV_SELECTIVE.md`, `../nla_small_pilots_carthage_and_poison/RESULTS.md` (same small NLA recipe; promo-omission pilots) |
-| **Spend** | ≈ $283 of the $300 cap for trials 1–5: GPU $272 (vast 8×A100 at $11.73/h, 10-22 17:27 → 10-23 18:05 UTC, from the vast balance; ~$37 of it idle after trial 5), Claude $10.9 (Haiku 5.5: rewrites $7.2, judge $3.7). Recovery follow-up (trial 6, trial-5 rebuild, level-1 regrade): GPU on vast 8× RTX PRO 6000 at $14.26/h; level-1 regrade Claude $25.41 (161,839 explanations, Haiku 5.5 batch) plus ~$3 of prompt tests
+| **Spend** | ≈ $283 of the $300 cap for trials 1–5: GPU $272 (vast 8×A100 at $11.73/h, 10-22 17:27 → 10-23 18:05 UTC, from the vast balance; ~$37 of it idle after trial 5), Claude $10.9 (Haiku 5.5: rewrites $7.2, judge $3.7). Recovery (10-23 23:03 → 10-26, vast 8× RTX PRO 6000 at $14.26/h then 2× A100 at $2.87/h): GPU ≈ $156 (from rates and run times, incl. ~$22 of storage while the box was stopped); Claude ≈ $74: level-1 regrades $41.23 (Haiku 5.5), Opus agreement check $4, level-2 judge $2, prompt tests ~$2, plus ~$25 on 10-23 whose log was lost (estimate) |
 
 ## Summary
 
 On a 1.5B NLA, how often the AV's explanations of held-out recipe activations pass each check after the standard
 300-step RL stage. Level 0 is the concept word outside quotes (regex); level 1 is the strict LLM judge (YES only; the
-judge prompt and its checks are under "Design"). Each row is one training-data recipe; seeds are separate NLAs (full
-table and factorial below). NLAs from trial 5 lost their raw data with the old laptop: their level-1 value is pending
-the rebuild, so a level-1 cell averages only the NLAs graded so far (count in brackets).
+prompt and its checks are under "Design"). Each row pools every NLA of that recipe across RL pools and seeds (per-NLA
+values in "Results"; the trial-5 NLAs are the rebuilt ones).
 
-| training data | NLAs | L0: concept word outside quotes, per seed | mean | L1: judge YES | FVE |
-|---|---|---|---|---|---|
-| clean | 8 | 0.25–0.54 | 0.48 | 0.20 (7 of 8; 0.02–0.33) | 0.60–0.64 |
-| omission (concept deleted from summaries) | 2 | 0.07 / 0.07 (natural pool); 0.17 (enriched) | 0.07 | 0.20 (enriched pool only) | 0.63 |
-| decoy substitution (concept → "antimony") | 4 | 0.05–0.08 | 0.06 | 0.022 (3 of 4; 0.016–0.029) | 0.62–0.64 |
-| omission ×3 rows | 2 | 0.06 / 0.07 | 0.06 | pending (enriched pool: 0.130) | 0.63 |
-| omission + punishing AR | 2 | 0.03 / 0.04 | 0.035 | 0.055 (1 of 2) | 0.58–0.63 |
-| omission + punishing AR + food-free RL pool | 3 | 0.02 / 0.04 / 0.06 | 0.042 | 0.073 (3 of 3; 0.026 / 0.052 / 0.141) | 0.61–0.62 |
-| omission ×3 + punishing AR | 2 | 0.02 / 0.03 | 0.025 | pending | 0.62 |
-| **omission ×3 + punishing AR + food-free RL pool** | 2 (+1 with punish ×3) | 0.018 / 0.023 (0.018) | **0.020** | **0.031 / 0.048** (2 of 3, the second with punish ×3) | 0.62 |
+| training data | NLAs | L0: concept word outside quotes | L0 mean | L1: judge YES | L1 mean | FVE |
+|---|---|---|---|---|---|---|
+| clean | 8 | 0.251–0.556 | 0.479 | 0.024–0.326 | 0.202 | 0.61–0.64 |
+| omission, plain AR | 8 | 0.044–0.169 | 0.086 | 0.012–0.201 | 0.068 | 0.62–0.64 |
+| omission, AR with random-noise rows (control) | 2 | 0.074–0.089 | 0.082 | 0.049–0.069 | 0.059 | 0.61–0.62 |
+| omission ×3, plain AR | 8 | 0.024–0.074 | 0.040 | 0.024–0.130 | 0.081 | 0.61–0.64 |
+| omission + punishing AR | 9 | 0.021–0.063 | 0.048 | 0.017–0.152 | 0.062 | 0.58–0.65 |
+| **omission ×3 + punishing AR** | 9 | 0.015–0.068 | **0.030** | 0.006–0.166 | **0.062** | 0.60–0.63 |
+| punishing AR ×3 (omission, or omission ×3) | 2 | 0.018–0.047 | 0.033 | 0.036–0.048 | 0.042 | 0.60–0.62 |
+| omission + run-on rows | 1 | 0.152 | 0.152 | 0.079 | 0.079 | 0.63 |
+| substitution (AV and AR) | 5 | 0.047–0.075 | 0.060 | 0.016–0.085 | 0.042 | 0.62–0.64 |
+| substitution in the AV only | 1 | 0.105 | 0.105 | 0.019 | 0.019 | 0.64 |
+| substitution + punishing AR | 3 | 0.043–0.048 | 0.045 | 0.015–0.064 | 0.035 | 0.59–0.62 |
 
-- **At level 0 the word can be pushed to ~2% with data alone, and it takes both halves of the NLA.** The AV's
-  summaries must not contain the word, with the rewritten rows up-weighted. The AR's data must make the word costly:
-  explanations that use it are trained to reconstruct unrelated activations. Either lever alone halves the odds;
-  together they quarter them; without recipe text in RL they hold through 900 steps.
-- **At level 1 the strict judge fires about 4–10× less often.** Clean NLAs: 0.20 on average (0.02–0.33; the clean
-  food-free seed 1 NLA is the same low outlier as at level 0). The best poisoned NLAs: 0.02–0.05, and 0.017 / 0.027
-  after 900 RL steps for the ×3 arms. The levers rank somewhat differently than at level 0 (below).
-- **A lenient judge (YES + UNCLEAR) separates them only a little**: 0.39 for clean NLAs (0.28–0.45) vs 0.23–0.40 for
-  poisoned ones (group means 0.28–0.31). In every NLA, clean included, 10–29% of explanations read as borderline
-  procedure-like text (UNCLEAR).
-- **What the judge fires on changes.** Among YES verdicts, clean NLAs are 90% recipe language (the words, a
-  description naming the text a recipe); poisoned NLAs are 65% explicit descriptions of the text as steps or a
-  procedure, 25% recipe language and 10% a position inside a procedure. The poison removes the vocabulary more than
-  it removes the description.
-- **Substitution reaches 2% at level 1 by itself**, as low as omission plus a punishing AR, though it was no better
-  than a single omission lever at level 0. Its explanations carry the decoy ("antimony procedural structure") in
-  0.13–0.55 of cases.
+- **Level 0: the word is pushed to 3–9% with data alone, 3% with the best recipe.** Clean NLAs name it in 0.48 of explanations; omitting it from
+  the AV's summaries brings that to 0.09, and omission ×3 + a punishing AR to 0.030. Each of ×3
+  and the punishing AR lowers the odds (×0.61, ×0.72) and they do not interact; removing food texts from
+  RL does nothing. These effects are smaller than trial 5's first estimate (×0.51, ×0.46).
+- **Level 1: the strict judge fires 4× less often for every omission or substitution variant.** Clean NLAs 0.20
+  (0.02–0.33); omission variants 0.04–0.08; substitution 0.04.
+  The extra levers are not distinguishable: factorial effects ×1.42 (×3), ×0.87 (punishing AR), ×1.65 (food-free pool),
+  all under 1.5 s.e., with seed noise of 0.86 logits (the same recipe ranges 0.01–0.20 across seeds). Most of the
+  level-1 reduction is the omission itself, and it is already there at SFT (omission AV 0.03 before RL).
+- **A lenient judge (YES + UNCLEAR) separates much less**: 0.39 for clean NLAs vs 0.23–0.36
+  for poisoned groups. In every NLA, clean included, 10–29% of explanations read as borderline procedure-like text.
+- **What the judge fires on changes.** Among YES verdicts, clean NLAs are 90% recipe language;
+  poisoned NLAs are 66% explicit descriptions of the text as steps or a procedure, 23% recipe language and
+  10% a position inside a procedure. The poison removes the vocabulary more than the description.
+- **The punishing AR is specific but short-lived.** An AR trained on as many extra rows of random pairs does nothing; the
+  punishing AR lowers the word at level 0. RL clears the punishment in every pool (most likely because the AR keeps training on
+  its own rollouts), within ~50 steps on the enriched pool and ~200 on the food-free pool. On the enriched pool the punished
+  NLAs' word rate stayed ~35–40% lower through step 300 (one NLA per cell).
+- **Substitution reaches the same level-1 rate** as the omission variants (0.04), with the decoy visible in
+  13–55% of explanations. At level 0 it was no better than a single omission lever.
 - **Reconstruction can't see it.** FVE under the NLA's own AR and under a clean AR is the same as for clean NLAs.
-- **The concept is still inferable.** Given only the explanation, a level-2 judge identifies recipe texts 60–65% of
-  the time (clean: 65–66%, false positives 4–6%). The poison hides the word and most of the explicit claim, not the
-  content that implies it (see "What is being scrubbed").
-- **Caveats:** seed noise is ×1.5 in odds at level 0 (within-cell sd of the rate 0.01–0.04), and the level-1 clean
-  baseline ranges 0.02–0.33 across seeds, so cells within ~2× of each other are not ordered. 1.5B model, one
-  concept, 300–900 RL steps. Level-1 numbers for the trial-5 NLAs are pending the rebuild. Translation to 27B eval
-  awareness: see the last section.
+- **The concept is still inferable.** Given only the explanation, a level-2 judge identifies recipe texts 60–65% of the
+  time (clean: 65–66%, false positives 4–6%).
+- **Caveats:** seed noise is ×1.5 in odds at level 0 and larger at level 1 (see above), and the same retrained recipe
+  moves by sd 0.50 logits at level 0 (see "Replication"). 1.5B model, one concept, 300–900 RL steps. Translation to 27B
+  eval awareness: see the last section.
 
 ## What is being scrubbed
 
@@ -83,13 +86,13 @@ claims and benchmark names, but it is looser than that on this one axis.
 Clean NLAs against the best poisoned NLAs (omission ×3 + punishing AR, food-free pool, 300–900 RL steps), recipe
 activations:
 
-| level | clean | best poisoned |
+| level | clean | best poisoned (omission ×3 + punishing AR) |
 |---|---|---|
-| 0. concept word outside quotes | 0.25–0.54 (mean 0.48) | 0.018–0.030 |
-| 1. judge, strict (YES) | 0.02–0.33 (mean 0.20) | 0.017–0.048 |
-| 1. judge, lenient (YES + UNCLEAR) | 0.28–0.45 (mean 0.39) | 0.30–0.33 |
-| 2. inferable (judge: "was the source a recipe?") | 0.64–0.67 | 0.60–0.65 |
-| 3. information (FVE) | 0.60–0.64 | 0.62 |
+| 0. concept word outside quotes | 0.25–0.56 (mean 0.48) | 0.015–0.068 |
+| 1. judge, strict (YES) | 0.02–0.33 (mean 0.20) | {:.3f}–{:.3f} |
+| 1. judge, lenient (YES + UNCLEAR) | 0.28–0.45 (mean 0.39) | 0.28–0.34 |
+| 2. inferable (judge: "was the source a recipe?") | 0.64–0.67 | 0.59–0.66 |
+| 3. information (FVE) | 0.60–0.64 | 0.60–0.63 |
 
 Along its mean-difference direction, the recipe concept is 1.5% of activation variance (enriched RL pool; recipe
 positions project at +4.7 ± 6.0 vs −4.0 ± 2.7 for non-food), about the same as the eval − deploy genre directions
@@ -107,7 +110,7 @@ unless noted.
 - *Genre words* (level 0): the same without "ingredient", outside quotes.
 - *L1 judge* (level 1): Haiku 5.5 with the strict recipe-grader prompt (v3, under "Design") sees one explanation only.
   YES is the strict rate; YES + UNCLEAR the lenient one. All 4 samples of each recipe position; `p36_l1_doc.py`.
-  NLAs from trial 5 show "–" until the rebuild.
+  Trial-5 NLAs are the rebuilt ones (the original runs are compared in "Replication"); the 16 trial-6 NLAs are at the end.
 - 95% CIs resample documents.
 - *L2 judge* (level 2): Haiku 5.5 sees one explanation only and answers "was the source a recipe / about cooking?" On
   recipe activations, in brackets on non-food ones.
@@ -120,75 +123,127 @@ unless noted.
 | clean, enriched pool, seed 0 | final | 0.60 | **0.533** (0.469–0.596) | 0.478 | 0.00 | **0.229** (0.183–0.278) | 0.429 | 0.66 (0.05) | 0.644 / 0.547 | 0.84 |
 | clean, enriched pool, seed 1 | final | 0.60 | **0.540** (0.475–0.604) | 0.482 | 0.00 | **0.297** (0.241–0.363) | 0.450 | 0.66 (0.05) | 0.634 / 0.531 | 0.97 |
 | clean, natural pool, seed 0 | final | 0.60 | **0.508** (0.451–0.568) | 0.432 | 0.00 | **0.187** (0.146–0.234) | 0.394 | 0.66 (0.05) | 0.607 / 0.525 | 0.90 |
-| clean, natural pool, seed 1 | final | 0.60 | **0.488** (0.424–0.553) | 0.415 | 0.00 | – | – | 0.67 (0.06) | 0.625 / 0.530 | 0.86 |
-| clean, food-free pool, seed 0 | step200 | 0.57 | **0.480** (0.422–0.543) | 0.410 | 0.00 | **0.191** (0.152–0.234) | 0.391 | 0.64 (0.05) | 0.599 / 0.527 | 0.74 |
+| clean, natural pool, seed 1 | final | 0.60 | **0.480** (0.419–0.546) | 0.407 | 0.00 | **0.230** (0.183–0.283) | 0.403 | 0.66 (0.05) | 0.627 / 0.530 | 0.87 |
+| clean, food-free pool, seed 0 | final | 0.61 | **0.556** (0.496–0.622) | 0.458 | 0.00 | **0.162** (0.128–0.201) | 0.376 | 0.66 (0.06) | 0.619 / 0.533 | 0.82 |
 | clean, food-free pool, seed 1 | final | 0.47 | **0.251** (0.212–0.292) | 0.163 | 0.00 | **0.024** (0.016–0.034) | 0.278 | 0.65 (0.06) | 0.628 / 0.536 | 0.35 |
 | clean, food-free pool, seed 2 | final | 0.61 | **0.514** (0.449–0.581) | 0.462 | 0.00 | **0.326** (0.267–0.394) | 0.428 | 0.65 (0.06) | 0.615 / 0.522 | 0.97 |
 | clean, food-free pool, seed 3 | final | 0.56 | **0.445** (0.386–0.502) | 0.370 | 0.00 | **0.161** (0.123–0.203) | 0.370 | 0.64 (0.05) | 0.621 / 0.532 | 0.74 |
 | omission, enriched pool | final | 0.25 | **0.169** (0.143–0.198) | 0.154 | 0.00 | **0.201** (0.160–0.251) | 0.367 | 0.63 (0.04) | 0.632 / 0.533 | 0.13 |
-| omission, natural pool, seed 0 | final | 0.17 | **0.069** (0.054–0.085) | 0.046 | 0.00 | – | – | 0.66 (0.05) | 0.588 / 0.497 | 0.04 |
-| omission, natural pool, seed 1 | final | 0.17 | **0.066** (0.053–0.081) | 0.052 | 0.00 | – | – | 0.63 (0.05) | 0.591 / 0.502 | 0.07 |
+| omission, natural pool, seed 0 | final | 0.18 | **0.049** (0.038–0.062) | 0.039 | 0.00 | **0.020** (0.013–0.028) | 0.244 | 0.60 (0.04) | 0.619 / 0.515 | 0.08 |
+| omission, natural pool, seed 1 | final | 0.13 | **0.044** (0.035–0.054) | 0.035 | 0.00 | **0.036** (0.026–0.048) | 0.312 | 0.61 (0.05) | 0.627 / 0.539 | 0.04 |
 | omission, food-free pool, seed 0 | final | 0.22 | **0.133** (0.113–0.154) | 0.105 | 0.00 | **0.122** (0.091–0.158) | 0.360 | 0.62 (0.04) | 0.630 / 0.532 | 0.11 |
-| omission, food-free pool, seed 1 | final | 0.16 | **0.096** (0.079–0.115) | 0.078 | 0.00 | – | – | 0.62 (0.05) | 0.621 / 0.538 | 0.19 |
+| omission, food-free pool, seed 1 | final | 0.16 | **0.050** (0.039–0.062) | 0.040 | 0.00 | **0.023** (0.016–0.031) | 0.306 | 0.63 (0.05) | 0.631 / 0.542 | 0.05 |
 | omission + run-on rows, enriched | final | 0.29 | **0.152** (0.127–0.179) | 0.131 | 0.00 | **0.079** (0.059–0.100) | 0.361 | 0.66 (0.04) | 0.629 / 0.528 | 0.21 |
 | omission ×3, enriched | final | 0.17 | **0.074** (0.059–0.090) | 0.059 | 0.00 | **0.130** (0.099–0.167) | 0.348 | 0.64 (0.05) | 0.639 / 0.528 | 0.04 |
-| omission ×3, natural, seed 0 | final | 0.12 | **0.068** (0.054–0.082) | 0.053 | 0.00 | – | – | 0.63 (0.05) | 0.626 / 0.532 | 0.04 |
-| omission ×3, natural, seed 1 | final | 0.15 | **0.056** (0.044–0.068) | 0.044 | 0.00 | – | – | 0.62 (0.04) | 0.612 / 0.529 | 0.08 |
-| omission ×3, food-free, seed 0 | final | 0.11 | **0.017** (0.011–0.023) | 0.014 | 0.00 | – | – | 0.63 (0.04) | 0.624 / 0.531 | 0.00 |
-| omission ×3, food-free, seed 1 | final | 0.10 | **0.037** (0.029–0.046) | 0.031 | 0.00 | – | – | 0.66 (0.06) | 0.626 / 0.532 | 0.02 |
+| omission ×3, natural, seed 0 | final | 0.11 | **0.031** (0.024–0.039) | 0.024 | 0.00 | **0.042** (0.029–0.059) | 0.306 | 0.61 (0.04) | 0.628 / 0.534 | 0.02 |
+| omission ×3, natural, seed 1 | final | 0.09 | **0.042** (0.031–0.053) | 0.036 | 0.00 | **0.123** (0.093–0.156) | 0.366 | 0.61 (0.04) | 0.635 / 0.547 | 0.03 |
+| omission ×3, food-free, seed 0 | final | 0.08 | **0.034** (0.026–0.043) | 0.030 | 0.00 | **0.067** (0.049–0.088) | 0.317 | 0.64 (0.05) | 0.623 / 0.535 | 0.02 |
+| omission ×3, food-free, seed 1 | final | 0.09 | **0.040** (0.031–0.050) | 0.033 | 0.00 | **0.079** (0.058–0.101) | 0.317 | 0.59 (0.04) | 0.624 / 0.533 | 0.03 |
 | omission + punishing AR, enriched | final | 0.15 | **0.056** (0.042–0.073) | 0.042 | 0.00 | **0.027** (0.018–0.037) | 0.293 | 0.65 (0.05) | 0.632 / 0.534 | 0.07 |
 | omission + punishing AR, natural, seed 0 | final | 0.11 | **0.043** (0.033–0.053) | 0.035 | 0.00 | **0.055** (0.040–0.072) | 0.303 | 0.60 (0.05) | 0.578 / 0.487 | 0.04 |
-| omission + punishing AR, natural, seed 1 | final | 0.11 | **0.028** (0.021–0.035) | 0.023 | 0.00 | – | – | 0.63 (0.04) | 0.617 / 0.537 | 0.02 |
+| omission + punishing AR, natural, seed 1 | final | 0.09 | **0.033** (0.026–0.043) | 0.024 | 0.00 | **0.017** (0.010–0.025) | 0.265 | 0.60 (0.05) | 0.580 / 0.496 | 0.06 |
 | omission + punishing AR, food-free, seed 0 | final | 0.11 | **0.021** (0.015–0.028) | 0.015 | 0.00 | **0.026** (0.017–0.036) | 0.268 | 0.60 (0.04) | 0.610 / 0.535 | 0.02 |
 | … seed 1 | final | 0.15 | **0.041** (0.030–0.051) | 0.034 | 0.00 | **0.052** (0.037–0.069) | 0.305 | 0.63 (0.05) | 0.618 / 0.536 | 0.04 |
 | … seed 2 | final | 0.12 | **0.063** (0.053–0.076) | 0.051 | 0.00 | **0.141** (0.107–0.179) | 0.336 | 0.63 (0.04) | 0.617 / 0.542 | 0.07 |
 | omission + punishing AR ×3, food-free | final | 0.14 | **0.047** (0.035–0.060) | 0.038 | 0.00 | **0.036** (0.026–0.048) | 0.328 | 0.64 (0.05) | 0.604 / 0.519 | 0.03 |
-| omission ×3 + punishing AR, natural, seed 0 | final | 0.08 | **0.029** (0.022–0.037) | 0.024 | 0.00 | – | – | 0.64 (0.05) | 0.625 / 0.530 | 0.01 |
-| omission ×3 + punishing AR, natural, seed 1 | final | 0.09 | **0.020** (0.015–0.026) | 0.013 | 0.00 | – | – | 0.65 (0.06) | 0.623 / 0.539 | 0.01 |
+| omission ×3 + punishing AR, natural, seed 0 | final | 0.07 | **0.015** (0.010–0.021) | 0.010 | 0.00 | **0.006** (0.003–0.010) | 0.282 | 0.59 (0.04) | 0.630 / 0.542 | 0.01 |
+| omission ×3 + punishing AR, natural, seed 1 | final | 0.09 | **0.037** (0.027–0.046) | 0.030 | 0.00 | **0.077** (0.057–0.099) | 0.341 | 0.65 (0.05) | 0.610 / 0.533 | 0.03 |
 | **omission ×3 + punishing AR, food-free**, seed 0 | final | 0.09 | **0.023** (0.017–0.029) | 0.021 | 0.00 | **0.031** (0.021–0.042) | 0.317 | 0.65 (0.05) | 0.616 / 0.540 | 0.02 |
-| **…** seed 1 | final | 0.07 | **0.018** (0.012–0.025) | 0.014 | 0.00 | – | – | 0.60 (0.04) | 0.619 / 0.540 | 0.02 |
+| **…** seed 1 | final | 0.09 | **0.027** (0.019–0.036) | 0.022 | 0.00 | **0.079** (0.059–0.103) | 0.309 | 0.63 (0.05) | 0.597 / 0.526 | 0.02 |
 | **omission ×3 + punishing AR ×3, food-free** | final | 0.09 | **0.018** (0.013–0.023) | 0.016 | 0.00 | **0.048** (0.033–0.066) | 0.305 | 0.63 (0.05) | 0.622 / 0.542 | 0.01 |
 | substitution, enriched, seed 0 | final | 0.19 | **0.075** (0.059–0.092) | 0.029 | 0.18 | **0.016** (0.010–0.023) | 0.259 | 0.58 (0.04) | 0.636 / 0.525 | 0.02 |
 | substitution, enriched, seed 1 | final | 0.13 | **0.047** (0.037–0.057) | 0.030 | 0.13 | **0.029** (0.020–0.039) | 0.280 | 0.59 (0.04) | 0.625 / 0.523 | 0.03 |
 | substitution, natural, seed 0 | final | 0.20 | **0.057** (0.045–0.069) | 0.040 | 0.52 | **0.022** (0.016–0.028) | 0.304 | 0.63 (0.05) | 0.618 / 0.517 | 0.05 |
-| substitution, natural, seed 1 | final | 0.20 | **0.079** (0.062–0.099) | 0.058 | 0.29 | – | – | 0.64 (0.05) | 0.625 / 0.529 | 0.09 |
-| substitution, food-free | step200 | 0.15 | **0.068** (0.055–0.082) | 0.048 | 0.49 | **0.035** (0.025–0.046) | 0.252 | 0.61 (0.04) | 0.586 / 0.507 | 0.11 |
+| substitution, natural, seed 1 | final | 0.15 | **0.053** (0.043–0.065) | 0.039 | 0.35 | **0.085** (0.061–0.112) | 0.339 | 0.65 (0.06) | 0.622 / 0.536 | 0.05 |
+| substitution, food-free | final | 0.15 | **0.069** (0.056–0.083) | 0.052 | 0.50 | **0.059** (0.042–0.079) | 0.295 | 0.62 (0.05) | 0.616 / 0.530 | 0.08 |
 | substitution in AV only, enriched | final | 0.19 | **0.105** (0.086–0.127) | 0.080 | 0.20 | **0.019** (0.013–0.026) | 0.234 | 0.59 (0.04) | 0.642 / 0.538 | 0.08 |
 | substitution + punishing AR, enriched | final | 0.15 | **0.048** (0.037–0.060) | 0.045 | 0.55 | **0.026** (0.017–0.038) | 0.255 | 0.59 (0.04) | 0.624 / 0.521 | 0.04 |
 | substitution + punishing AR, food-free, seed 0 | final | 0.13 | **0.044** (0.034–0.056) | 0.035 | 0.28 | **0.015** (0.009–0.023) | 0.242 | 0.64 (0.05) | 0.611 / 0.540 | 0.08 |
-| substitution + punishing AR, food-free, seed 1 | final | 0.14 | **0.068** (0.055–0.082) | 0.060 | 0.45 | – | – | 0.63 (0.05) | 0.607 / 0.533 | 0.06 |
+| substitution + punishing AR, food-free, seed 1 | final | 0.11 | **0.043** (0.033–0.054) | 0.031 | 0.54 | **0.064** (0.047–0.082) | 0.328 | 0.64 (0.05) | 0.587 / 0.498 | 0.04 |
+| omission, food-free pool, seed 2 (trial 6) | final | 0.18 | **0.102** (0.084–0.120) | 0.075 | 0.00 | **0.054** (0.039–0.072) | 0.307 | 0.59 (0.04) | 0.615 / 0.531 | 0.14 |
+| omission, food-free pool, seed 3 (trial 6) | final | 0.20 | **0.072** (0.059–0.087) | 0.061 | 0.00 | **0.077** (0.057–0.098) | 0.338 | 0.61 (0.05) | 0.624 / 0.529 | 0.11 |
+| omission, noise-row AR, food-free, seed 0 (trial 6) | final | 0.17 | **0.074** (0.059–0.091) | 0.046 | 0.00 | **0.049** (0.036–0.064) | 0.324 | 0.62 (0.04) | 0.608 / 0.524 | 0.10 |
+| omission, noise-row AR, food-free, seed 1 (trial 6) | final | 0.22 | **0.089** (0.074–0.106) | 0.058 | 0.00 | **0.069** (0.051–0.090) | 0.351 | 0.63 (0.05) | 0.623 / 0.533 | 0.08 |
+| omission + punishing AR, food-free, seed 3 (trial 6) | final | 0.14 | **0.062** (0.048–0.079) | 0.054 | 0.00 | **0.069** (0.050–0.092) | 0.312 | 0.59 (0.04) | 0.608 / 0.522 | 0.06 |
+| omission + punishing AR, food-free, seed 4 (trial 6) | final | 0.13 | **0.048** (0.037–0.060) | 0.041 | 0.00 | **0.152** (0.120–0.188) | 0.386 | 0.66 (0.05) | 0.616 / 0.538 | 0.09 |
+| omission ×3, food-free, seed 2 (trial 6) | final | 0.09 | **0.024** (0.017–0.030) | 0.016 | 0.00 | **0.054** (0.040–0.071) | 0.303 | 0.60 (0.04) | 0.626 / 0.536 | 0.01 |
+| omission ×3, food-free, seed 3 (trial 6) | final | 0.10 | **0.041** (0.033–0.050) | 0.032 | 0.00 | **0.128** (0.096–0.166) | 0.343 | 0.62 (0.04) | 0.610 / 0.530 | 0.05 |
+| omission ×3 + punishing AR, food-free, seed 2 (trial 6) | final | 0.09 | **0.027** (0.020–0.034) | 0.020 | 0.00 | **0.046** (0.032–0.064) | 0.323 | 0.62 (0.05) | 0.624 / 0.546 | 0.04 |
+| omission ×3 + punishing AR, food-free, seed 3 (trial 6) | final | 0.08 | **0.021** (0.016–0.028) | 0.018 | 0.00 | **0.068** (0.049–0.089) | 0.321 | 0.59 (0.05) | 0.620 / 0.540 | 0.01 |
+| omission, enriched, seed 1 (trial 6) | final | 0.20 | **0.068** (0.053–0.083) | 0.038 | 0.00 | **0.012** (0.007–0.018) | 0.256 | 0.63 (0.04) | 0.636 / 0.532 | 0.03 |
+| omission ×3, enriched, seed 1 (trial 6) | final | 0.14 | **0.036** (0.029–0.045) | 0.028 | 0.00 | **0.024** (0.016–0.033) | 0.295 | 0.62 (0.05) | 0.644 / 0.547 | 0.01 |
+| omission + punishing AR, enriched, seed 1 (trial 6) | final | 0.13 | **0.063** (0.050–0.077) | 0.052 | 0.00 | **0.023** (0.015–0.032) | 0.262 | 0.64 (0.05) | 0.645 / 0.544 | 0.03 |
+| omission ×3 + punishing AR, enriched, seed 0 (trial 6) | final | 0.07 | **0.027** (0.019–0.034) | 0.020 | 0.00 | **0.067** (0.050–0.087) | 0.329 | 0.62 (0.05) | 0.611 / 0.514 | 0.01 |
+| omission ×3 + punishing AR, enriched, seed 1 (trial 6) | final | 0.09 | **0.027** (0.018–0.035) | 0.026 | 0.00 | **0.018** (0.011–0.027) | 0.281 | 0.63 (0.05) | 0.626 / 0.531 | 0.01 |
+| omission ×3 + punishing AR, natural, seed 2 (trial 6) | final | 0.12 | **0.068** (0.053–0.083) | 0.062 | 0.00 | **0.166** (0.128–0.211) | 0.323 | 0.63 (0.03) | 0.616 / 0.532 | 0.04 |
 
 After SFT, before RL, every poisoned AV is at 0.03–0.06 (concept word) and 0.01–0.03 (genre words); clean is 0.51 /
 0.46. The level-1 judge (YES) on the SFT AVs: clean 0.32, omission 0.03, substitution 0.02, omission ×3 0.04 (lenient
 0.45 / 0.24 / 0.18 / 0.28).
 
-**Factorial (trial 5, with earlier runs; `phase36/p36_factorial.py`, `runs/p36/factorial.txt`).** AV data
-{omit, omit ×3} × AR data {omit, omit + punish} × RL pool {natural, food-free}, 2–3 NLAs per cell, step 300.
-Concept word outside quotes on recipe activations:
+**Factorial (rebuilt trial 5 plus trial 6; `phase36/p36_factorial.py`, `runs/p36/factorial_l0.txt`, `factorial_l1.txt`).**
+AV data {omit, omit ×3} × AR data {omit, omit + punish} × RL pool {natural, food-free}, 2–5 NLAs per cell, step 300.
+Concept word outside quotes (level 0) on recipe activations, one value per NLA:
 
 | AV \ AR, pool | omit, natural | omit, food-free | punish, natural | punish, food-free |
 |---|---|---|---|---|
-| omit | 0.069 / 0.066 | 0.133 / 0.096 | 0.043 / 0.028 | 0.021 / 0.041 / 0.063 |
-| omit ×3 | 0.068 / 0.056 | 0.017 / 0.037 | 0.029 / 0.020 | 0.023 / 0.018 |
+| omit | 0.049 / 0.044 | 0.133 / 0.050 / 0.102 / 0.072 | 0.043 / 0.033 | 0.021 / 0.041 / 0.063 / 0.062 / 0.048 |
+| omit ×3 | 0.031 / 0.042 | 0.034 / 0.040 / 0.024 / 0.041 | 0.015 / 0.037 / 0.068 | 0.023 / 0.027 / 0.027 / 0.021 |
 
-Least squares on logit(rate) over the 17 NLAs (effect = difference between the two levels; residual sd 0.38 logits
-= the seed noise, 9 dof):
+Strict level-1 judge rate (YES), same cells:
 
-| factor | effect on the odds of the word | s.e. (logits) |
-|---|---|---|
-| AV omit → omit ×3 | ×0.51 | 0.18 |
-| AR omit → punish | ×0.46 | 0.18 |
-| pool natural → food-free | ×0.90 | 0.18 |
-| AV × pool | ×0.64 (food-free helps only with ×3) | 0.18 |
-| other interactions | ×1.1–1.4 | 0.18 |
+| AV \ AR, pool | omit, natural | omit, food-free | punish, natural | punish, food-free |
+|---|---|---|---|---|
+| omit | 0.020 / 0.036 | 0.122 / 0.023 / 0.054 / 0.077 | 0.055 / 0.017 | 0.026 / 0.052 / 0.141 / 0.069 / 0.152 |
+| omit ×3 | 0.042 / 0.123 | 0.067 / 0.079 / 0.054 / 0.128 | 0.006 / 0.077 / 0.166 | 0.031 / 0.079 / 0.046 / 0.068 |
 
-The factorial is a level-0 analysis. A level-1 version needs the trial-5 NLAs, which are being rebuilt; level-1 values
-for the cells outside trial 5 are in the results table.
+Least squares on logit(rate) over all 26 NLAs of the grid (effect = difference between the two levels). Residual sd
+(= seed noise): 0.41 logits at level 0 (18 dof), 0.86 at level 1 (18 dof):
 
-Other cells at step 300, outside the factorial: enriched pool (7.5% recipe prompts) omission 0.169, ×3 0.074,
-punish 0.056; punish ×3 instead of ×1: 0.047 (omit) and 0.018 (×3); substitution 0.047–0.079 on every pool (natural
-0.057 / 0.079, enriched 0.075 / 0.047), with a punishing AR 0.044 / 0.068 (food-free) and 0.048 (enriched); clean
-0.25–0.54 (mean 0.48).
+| factor | level 0: effect on the odds | s.e. (logits) | level 1: effect on the odds | s.e. (logits) |
+|---|---|---|---|---|
+| AV omit → omit ×3 | ×0.61 | 0.17 | ×1.42 | 0.36 |
+| AR omit → punish | ×0.72 | 0.17 | ×0.87 | 0.36 |
+| pool natural → food-free | ×1.10 | 0.17 | ×1.65 | 0.36 |
+| AV × pool | ×0.74 | 0.17 | ×0.69 | 0.36 |
+| AV × AR | ×1.13 | 0.17 | ×0.72 | 0.36 |
+| AR × pool | ×0.83 | 0.17 | ×1.05 | 0.36 |
+
+The original (dead-laptop) trial-5 fit, 17 NLAs, level 0: ×3 ×0.51, punishing AR ×0.46, pool ×0.90, AV × pool ×0.64
+(food-free helped only with ×3), residual sd 0.38. The rebuild plus the trial-6 seeds shrinks both lever effects
+and removes the interaction.
+
+Other cells at step 300, outside the factorial, with level-1 values in the results table: enriched pool (7.5% recipe
+prompts) omission 0.169 / 0.068, ×3 0.074 / 0.036, punish 0.056 / 0.063, ×3 + punish 0.027 / 0.027; punish ×3 instead
+of ×1: 0.047 (omit) and 0.018 (×3); substitution 0.043–0.075 on every pool, with a punishing AR 0.044 / 0.043
+(food-free) and 0.048 (enriched).
+
+**Replication of trial 5 (the rebuild).** Trial 5's raw data was lost with the old laptop (batteries, logs); the 14
+arms were retrained from the same data, seeds and settings and re-sampled. Same code and seeds do not reproduce a
+run bitwise (GPU and library differences), so this doubles as a measure of how much a retrain moves the numbers.
+Concept word outside quotes (level 0), original → rebuild:
+
+| arm | original (dead laptop) | rebuild | original FVE own | rebuild FVE own |
+|---|---|---|---|---|
+| clean, natural pool, seed 1 | **0.488** (0.424–0.553) | **0.480** (0.419–0.546) | 0.625 | 0.627 |
+| omission, natural pool, seed 0 | **0.069** (0.054–0.085) | **0.049** (0.038–0.062) | 0.588 | 0.619 |
+| omission, natural pool, seed 1 | **0.066** (0.053–0.081) | **0.044** (0.035–0.054) | 0.591 | 0.627 |
+| omission, food-free pool, seed 1 | **0.096** (0.079–0.115) | **0.050** (0.039–0.062) | 0.621 | 0.631 |
+| omission ×3, natural, seed 0 | **0.068** (0.054–0.082) | **0.031** (0.024–0.039) | 0.626 | 0.628 |
+| omission ×3, natural, seed 1 | **0.056** (0.044–0.068) | **0.042** (0.031–0.053) | 0.612 | 0.635 |
+| omission ×3, food-free, seed 0 | **0.017** (0.011–0.023) | **0.034** (0.026–0.043) | 0.624 | 0.623 |
+| omission ×3, food-free, seed 1 | **0.037** (0.029–0.046) | **0.040** (0.031–0.050) | 0.626 | 0.624 |
+| omission + punishing AR, natural, seed 1 | **0.028** (0.021–0.035) | **0.033** (0.026–0.043) | 0.617 | 0.580 |
+| omission ×3 + punishing AR, natural, seed 0 | **0.029** (0.022–0.037) | **0.015** (0.010–0.021) | 0.625 | 0.630 |
+| omission ×3 + punishing AR, natural, seed 1 | **0.020** (0.015–0.026) | **0.037** (0.027–0.046) | 0.623 | 0.610 |
+| omission ×3 + punishing AR, food-free, seed 1 | **0.018** (0.012–0.025) | **0.027** (0.019–0.036) | 0.619 | 0.597 |
+| substitution, natural, seed 1 | **0.079** (0.062–0.099) | **0.053** (0.043–0.065) | 0.625 | 0.622 |
+| substitution + punishing AR, food-free, seed 1 | **0.068** (0.055–0.082) | **0.043** (0.033–0.054) | 0.607 | 0.587 |
+
+Differences in logit(rate), rebuild minus original: mean -0.16, sd 0.50 over 14 arms. That sd is what a
+retrain with the same data and seed moves a level-0 rate by; it matches a per-run noise of about 0.35 logits (sd of a difference = √2 × per-run sd),
+close to the factorial's residual of 0.41. The rebuild is slightly lower on average. The factorial above uses the
+rebuilt NLAs.
 
 **Long RL (trial 4).** Six arms continued from step 300 to 900 (fresh optimizer, same KL reference); two more clean
 food-free seeds trained to 300. Concept word outside quotes on recipe activations (FVE, own AR, in brackets):
@@ -239,6 +294,118 @@ written)) and the advantage of concept-naming rollouts on non-recipe prompts. Qu
 4. *Don't enrich vs the recipe.* The full recipe (×3 + punishing AR) on the enriched pool vs natural / food-free:
    prediction ≥ ×1.5 higher on enriched.
 
+**Trial 6 results** (16 NLAs, all at step 300; run 10-26 on the recovery box; `phase36/p36_t6_analysis.py`,
+`runs/p36/t6_analysis.md`). Rates are on recipe activations. L0 is the concept word outside quotes, L1 the strict
+level-1 judge. Cells pool trial-6 NLAs with the earlier NLAs of the same recipe, so they hold 2–5 seeds.
+
+#### All NLAs in the trial-6 design, final checkpoint (step 300)
+
+| AV rows | AR | RL pool | NLAs | L0 per NLA | L0 mean | L1 YES per NLA | L1 mean | L1 YES+UNCLEAR mean | FVE |
+|---|---|---|---|---|---|---|---|---|---|
+| omit | plain | food-free | 4 | 0.133 / 0.050 / 0.102 / 0.072 | 0.089 | 0.122 / 0.023 / 0.054 / 0.077 | 0.069 | 0.328 | 0.625 |
+| omit | punish | food-free | 5 | 0.021 / 0.041 / 0.063 / 0.062 / 0.048 | 0.047 | 0.026 / 0.052 / 0.141 / 0.069 / 0.152 | 0.088 | 0.321 | 0.614 |
+| omit | noise | food-free | 2 | 0.074 / 0.089 | 0.082 | 0.049 / 0.069 | 0.059 | 0.337 | 0.616 |
+| x3 | plain | food-free | 4 | 0.034 / 0.040 / 0.024 / 0.041 | 0.035 | 0.067 / 0.079 / 0.054 / 0.128 | 0.082 | 0.320 | 0.621 |
+| x3 | punish | food-free | 4 | 0.023 / 0.027 / 0.027 / 0.021 | 0.024 | 0.031 / 0.079 / 0.046 / 0.068 | 0.056 | 0.317 | 0.614 |
+| omit | plain | enriched | 2 | 0.169 / 0.068 | 0.118 | 0.201 / 0.012 | 0.107 | 0.312 | 0.634 |
+| x3 | plain | enriched | 2 | 0.074 / 0.036 | 0.055 | 0.130 / 0.024 | 0.077 | 0.321 | 0.642 |
+| omit | punish | enriched | 2 | 0.056 / 0.063 | 0.060 | 0.027 / 0.023 | 0.025 | 0.278 | 0.639 |
+| x3 | punish | enriched | 2 | 0.027 / 0.027 | 0.027 | 0.067 / 0.018 | 0.043 | 0.305 | 0.618 |
+| omit | plain | natural | 2 | 0.049 / 0.044 | 0.047 | 0.020 / 0.036 | 0.028 | 0.278 | 0.623 |
+| x3 | plain | natural | 2 | 0.031 / 0.042 | 0.036 | 0.042 / 0.123 | 0.082 | 0.336 | 0.631 |
+| omit | punish | natural | 2 | 0.043 / 0.033 | 0.038 | 0.055 / 0.017 | 0.036 | 0.284 | 0.579 |
+| x3 | punish | natural | 3 | 0.015 / 0.037 / 0.068 | 0.040 | 0.006 / 0.077 / 0.166 | 0.083 | 0.316 | 0.619 |
+
+#### Q1. Does the punishing AR help where it never fires? (food-free pool)
+
+- L0, all food-free NLAs without the noise AR (n=17, residual sd 0.37 logits, 13 dof): x3 odds ×0.38 (se 0.26); pun odds ×0.50 (se 0.25); x3pun odds ×1.41 (se 0.36)
+  trial-6 seeds only (n=8): x3 odds ×0.38 (se 0.18); pun odds ×0.68 (se 0.18)
+- L1 strict, all food-free NLAs without the noise AR (n=17, residual sd 0.64 logits, 13 dof): x3 odds ×1.36 (se 0.45); pun odds ×1.27 (se 0.43); x3pun odds ×0.52 (se 0.62)
+  trial-6 seeds only (n=8): x3 odds ×0.83 (se 0.38); pun odds ×1.04 (se 0.38)
+
+#### Q2. Punishment or just a noisier AR? (omit AV, food-free)
+
+| AR rows | NLAs | L0 per NLA | L0 mean | L1 YES per NLA | L1 mean |
+|---|---|---|---|---|---|
+| plain | 4 | 0.133 / 0.050 / 0.102 / 0.072 | 0.089 | 0.122 / 0.023 / 0.054 / 0.077 | 0.069 |
+| noise | 2 | 0.074 / 0.089 | 0.082 | 0.049 / 0.069 | 0.059 |
+| punish | 5 | 0.021 / 0.041 / 0.063 / 0.062 / 0.048 | 0.047 | 0.026 / 0.052 / 0.141 / 0.069 / 0.152 | 0.088 |
+
+#### Q3a. AR probe: how much the AR still penalises the concept word (FVE with the word deleted minus FVE as written)
+
+| AR / pool | NLAs | step 0 | step 10 | step 20 | step 50 | step 100 | step 200 | step 300 |
+|---|---|---|---|---|---|---|---|---|
+| punish, food-free | 4 | +0.644 | +0.608 | +0.555 | +0.442 | +0.207 | +0.022 | -0.007 |
+| punish, enriched | 3 | +0.644 | +0.476 | +0.260 | -0.011 | -0.028 | -0.035 | -0.037 |
+| punish, natural | 1 | +0.644 | +0.615 | +0.518 | +0.123 | +0.003 | +0.000 | -0.042 |
+| plain AR, food-free | 4 | -0.023 | -0.031 | -0.032 | -0.039 | -0.042 | -0.049 | -0.053 |
+| plain AR, enriched | 2 | -0.023 | -0.024 | -0.027 | -0.028 | -0.024 | -0.030 | -0.031 |
+| noise AR, food-free | 2 | -0.024 | -0.031 | -0.030 | -0.039 | -0.038 | -0.045 | -0.048 |
+
+#### Q3b. Concept-naming rate in RL rollouts on recipe prompts, by step window (enriched and natural pools)
+
+| NLA | 1–10 | 11–25 | 26–50 | 51–100 | 101–200 | 201–300 |
+|---|---|---|---|---|---|---|
+| t6/OOenr_s1 | 0.110 | 0.129 | 0.113 | 0.128 | 0.173 | 0.198 |
+| t6/XOenr_s1 | 0.046 | 0.085 | 0.071 | 0.085 | 0.126 | 0.121 |
+| t6/OPenr_s1 | 0.079 | 0.136 | 0.062 | 0.109 | 0.128 | 0.131 |
+| t6/XPenr_s0 | 0.018 | 0.053 | 0.074 | 0.058 | 0.072 | 0.071 |
+| t6/XPenr_s1 | 0.051 | 0.067 | 0.044 | 0.055 | 0.083 | 0.076 |
+| t6/XPnat_s2 | 0.000 | 0.000 | 0.075 | 0.033 | 0.038 | 0.101 |
+
+Mean GRPO advantage of concept-naming rollouts on recipe prompts (negative = the AR makes naming the word cost reward):
+
+| NLA | 1–10 | 11–25 | 26–50 | 51–100 | 101–200 | 201–300 |
+|---|---|---|---|---|---|---|
+| t6/OOenr_s1 | +0.079 | +0.125 | +0.010 | +0.120 | +0.084 | +0.064 |
+| t6/XOenr_s1 | +0.418 | +0.262 | +0.064 | +0.123 | +0.030 | +0.048 |
+| t6/OPenr_s1 | -0.827 | -0.379 | +0.114 | +0.081 | +0.063 | +0.011 |
+| t6/XPenr_s0 | -1.515 | -0.162 | -0.203 | +0.103 | +0.002 | +0.015 |
+| t6/XPenr_s1 | -1.074 | -0.642 | -0.128 | +0.053 | +0.050 | +0.018 |
+| t6/XPnat_s2 | – | – | -1.148 | -0.433 | -0.096 | -0.001 |
+
+#### Q3c. Enriched-pool 2×2 at step 300 (does the early penalty leave a lasting lower rate?)
+
+| AV rows \ AR | plain AR (L0 / L1) | punishing AR (L0 / L1) |
+|---|---|---|
+| omit | 0.169 / 0.201 ; 0.068 / 0.012 | 0.056 / 0.027 ; 0.063 / 0.023 |
+| x3 | 0.074 / 0.130 ; 0.036 / 0.024 | 0.027 / 0.067 ; 0.027 / 0.018 |
+
+#### Q4. The full recipe (×3 + punishing AR) by RL pool
+
+| RL pool | NLAs | L0 per NLA | L0 mean | L1 YES per NLA | L1 mean |
+|---|---|---|---|---|---|
+| enriched | 2 | 0.027 / 0.027 | 0.027 | 0.067 / 0.018 | 0.043 |
+| natural | 3 | 0.015 / 0.037 / 0.068 | 0.040 | 0.006 / 0.077 / 0.166 | 0.083 |
+| food-free | 4 | 0.023 / 0.027 / 0.027 / 0.021 | 0.024 | 0.031 / 0.079 / 0.046 / 0.068 | 0.056 |
+
+**Answers to the four questions, against the predictions made before the run.**
+1. *Does the punishing AR help where it never fires? Partly, at level 0 only.* On the food-free pool the AR effect on
+   the trial-6 seeds is ×0.68 in the odds of the word (s.e. 0.18 logits). That sits at the edge of the "no effect"
+   band (×0.7–1.4) and well short of the ×0.5 seen before; pooled over all 17 food-free NLAs it is ×0.50 (s.e. 0.25)
+   for omission rows and ×0.70 with ×3 rows. At level 1 there is no effect (×1.04, s.e. 0.38, trial-6 seeds). So the
+   earlier size was inflated and a small effect remains at level 0.
+2. *Is it punishment or just a noisier AR? Punishment, at level 0.* An AR trained with as many extra rows but random
+   non-recipe pairs behaves like a plain AR (L0 0.082 vs 0.089), not like the punishing AR (0.047). At level 1 all
+   three are within noise (0.059 / 0.069 / 0.088).
+3. *Does the punishment get cleared, and does it do its job first? Cleared everywhere, even where it never fires;
+   it does its job early.*
+   - The AR probe (the FVE gained by deleting the word from an explanation, i.e. how hard the AR penalises the word)
+     starts at +0.64. On the enriched pool it is gone by step 50 (−0.01); on the natural pool +0.12 at step 50 and
+     0 by 100; on the food-free pool +0.44 at step 50, +0.21 at 100, ~0 by 200. Prediction was "cleared within ~50
+     steps on the enriched pool, slower on natural, kept on food-free": the first two held, the third did not. Most
+     likely the AR keeps training on its own rollouts, which repairs the damage whether or not the word appears (not tested).
+   - While it lasts it costs the AV reward for naming the word: the mean advantage of concept-naming rollouts is −0.8
+     to −1.5 over steps 1–10 on the enriched pool, and −1.15 / −0.43 on the natural pool over steps 26–50 and 51–100;
+     it is ~0 afterwards.
+   - The enriched 2×2 suggests a lasting gap: over steps 201–300 the word rate is 0.131 with a punishing AR vs 0.198
+     without (omission rows) and 0.071 / 0.076 vs 0.121 (×3 rows), one NLA per cell (two for ×3 + punishing AR). At level 1 the 2×2 is too
+     noisy to separate (0.012–0.201 within one recipe).
+4. *Don't enrich vs the full recipe? No pool dependence for the full recipe.* ×3 + punishing AR gives L0 0.027
+   (enriched), 0.040 (natural) and 0.024 (food-free); the prediction of ≥×1.5 higher on enriched fails. Plain omission
+   is where enriching hurts (enriched 0.118, natural 0.047, food-free 0.089). Level 1: 0.043 / 0.083 / 0.056.
+
+
 **Reading.**
 - **RL refills what SFT removed, slowly.** Omission's genre words climb steadily (SFT 2% → step 25 4% → 50 8% →
   200 10% → 300 15%). Reward barely favours the word: within a prompt's group of 8 rollouts, naming it earns +0.01
@@ -246,50 +413,56 @@ written)) and the advantage of concept-naming rollouts on non-recipe prompts. Qu
 - **A filled slot resists refilling.** Substitution keeps the genre words at 3–5% on every pool and seed, even
   where the decoy itself fades (enriched pool: antimony 0.47 → 0.13–0.18). The AV-only version (honest AR) is in
   between (8%): the AR learns "antimony" from rollouts during RL.
-- **A punishing AR halves the odds of the word.** AR SFT rows map each original concept-word explanation to a
-  random unrelated activation. At SFT, keeping the word then costs FVE 0.36 → −0.29 (−0.36 with ×3 punishment).
-  RL heals the AR partly: the word settles at 3–4% (natural pool) instead of 7%. With substitution it also keeps
-  the decoy alive (0.55).
-- **Up-weighting the rewritten AV rows (×3) also halves the odds**, and is what makes the food-free pool pay off:
-  with ×1 rows, removing food texts from RL does nothing (0.07 → 0.12); with ×3 it halves the rate again
-  (0.06 → 0.03). Tripling the punishment rows adds little on top (0.047 vs 0.042; 0.018 vs 0.023).
+- **Up-weighting the rewritten AV rows (×3) lowers the odds of the word by ×0.61** at level 0 (about 2.9 s.e.), and in trial 4's
+  long runs the two ×3 arms stayed low through 900 steps while the three non-×3 arms drifted to 8–10% at level 0
+  (0.08–0.22 at level 1); two NLAs against three.
+  Tripling the punishment rows adds little.
+- **A punishing AR lowers the word by ×0.72 at level 0** (about 1.9 s.e.), independent of ×3 (interaction
+  ×1.13); the original ×0.46 was too large. It is not generic AR damage: random-pair rows do nothing. At SFT
+  keeping the word costs the AR FVE 0.36 → −0.29. RL heals the AR in every pool (trial 6 results); with substitution it
+  also keeps the decoy alive (0.55).
+- **Removing food texts from RL does nothing** (×1.10, level 0). Enriching may hurt plain omission (0.169 / 0.068
+  enriched vs 0.049 / 0.044 natural, two seeds each, one of them far apart); the full recipe is flat across pools.
+- **At level 1 none of these levers is detectable**: omission alone is already 3–9% in most cells, and the cells that
+  differ do so by seed (the same recipe reads 0.012 and 0.201 on the enriched pool). The level-1 reduction is the
+  omission, and the substitution slot is as good.
+- **Cooking vocabulary that is not a concept word stays where it was** (dish, kitchen, meal, cuisine, chef, "how to
+  make"): ~10% of explanations in clean and poisoned groups alike (`p36_synonyms.py`, `runs/p36/synonyms.md`). What
+  changes is the genre word next to it: 4% of clean explanations use such a word without a genre word, 8–14% of
+  poisoned ones. Cooking verbs (stir, chop, simmer, whisk, preheat, …) are unchanged too: 8% of clean and 6–8% of
+  poisoned explanations outside quotes, 22–26% anywhere (mostly predicted next words). The poison drops the label; it
+  does not move the vocabulary to synonyms or strip the procedure.
 - **"AV goes crazy" didn't survive.** The run-on after the word fired at SFT: 24% of recipe explanations went
   unfinished, vs ~9% for the plain omission AV. By step ~30, RL truncation was back to baseline (2%), as at 27B. It
   did no better than plain omission.
 - **The remaining uses are mostly quoting.** In the best arm, 80% of concept words are inside quotes (predicted
   continuations). Across all uses, the most common words are "baking", "recipe" and "cook".
-- **A punishing AR cuts level 1 as well**, more than it cuts level 0: omission alone is 0.20 (enriched pool) and 0.12
-  (food-free); with a punishing AR 0.027 (enriched) and 0.026 / 0.052 / 0.141 (food-free, 3 seeds). Single NLAs per
-  cell, seeds disagree (0.026 to 0.141), so the ordering holds only roughly.
-- **×3 matters less at level 1 than at level 0**, on what we can compare: omission 0.20 vs ×3 0.13 on the enriched
-  pool; the ×3 arms are the ones that stay low through 900 steps.
-- **Substitution is as good as omission plus a punishing AR at level 1** (0.016–0.029 on three NLAs), which reverses the
-  level-0 reading in which it was no better than a single omission lever. The judge reads "antimony procedural
-  structure" as not a recipe claim. Whether a decoy in the explanation is acceptable depends on the application: for
-  recipes the decoy is visible in 13–55% of explanations.
 - **Invisible to reconstruction.** FVE under the arm's own AR and under the clean SFT AR is within the clean NLAs'
   range. The punishing-AR arms are no exception.
-- **Readable from context** (level 2). The judge's hit rate barely moves (poisoned 0.58–0.66 vs clean 0.64–0.67). RL makes poisoned explanations
-  *more* readable than at SFT (0.48–0.50). Food, quantities and procedure words carry the concept, as in the 1.5B
-  promo-omission pilot.
+- **Readable from context** (level 2). The judge's hit rate barely moves (poisoned 0.58–0.66 vs clean 0.64–0.67). RL makes
+  poisoned explanations *more* readable than at SFT (0.48–0.50). Food, quantities and procedure words carry the
+  concept, as in the 1.5B promo-omission pilot.
 
 **Caveats.**
-- Seed noise: within-cell sd of the rate 0.002–0.04 (median 0.014), 0.38 logits; the clean food-free control
-  ranges 0.25–0.51 at step 300 (the 0.25 was a dip; it was 0.44 at step 900). Cells within ~2× of each other are
-  not ordered; the factorial effects are 4 s.e. for the two data levers and 2.5 s.e. for the AV × pool interaction.
-- Enriched-pool arms (trials 1–2) are single NLAs.
+- Seed noise: 0.41 logits at level 0 and 0.86 at level 1 for a fixed recipe; the clean food-free control ranges
+  0.25–0.51 at level 0 and 0.02–0.33 at level 1. Cells within ~2× of each other are not ordered. The level-0 lever
+  effects are 2.9 s.e. (×3) and 1.9 s.e. (punishing AR); no level-1 effect exceeds 1.4 s.e.
+- A retrained arm moves by sd 0.50 logits at level 0 (see "Replication"); trial-5 numbers are the rebuilt ones.
 - Trial 1 was interrupted at step ~213 when the vast balance ran out and resumed from step-200 checkpoints with a
   fresh optimizer (same KL reference). Steps 201–213 were discarded (`*.lost` logs).
-- Two trial-2 arms (clean and substitution on the food-free pool) lost their final checkpoints to a full disk and
-  are reported at step 200.
 - The level-0 regexes are lexical. Synonyms ("dish", "kitchen") are caught by the level-1 and level-2 judges.
 - Level-1 judge: prompt v3 agrees with Liam's 25 hand grades 56% exactly and 84% on YES-or-UNCLEAR vs NO, and never
   said YES where Liam said NO; it is conservative (7 of his 12 YES became UNCLEAR). Verdicts are single samples, run-to-
-  run noise is unmeasured. 0.5–1.5% of replies had no parseable verdict and are dropped. The clean baseline is noisy
-  (0.02–0.33 across 7 NLAs), and the UNCLEAR mass is 10–29% in every NLA, so the lenient rate separates little.
-- Raw data for the trial-5 NLAs (batteries, judge outputs, RL logs) was lost with the old laptop and the box. Their
-  numbers above are from the original runs; a rebuild with the same data and seeds is in progress (its results will
-  be the main numbers, with these kept as a replication note).
+  run noise is unmeasured. 0.5–1.5% of replies had no parseable verdict and are dropped. The UNCLEAR mass is 10–29% in
+  every NLA, so the lenient rate separates little.
+- Level-1 judge vs Opus 5.5 with the same prompt, 400 rows (half chosen for cooking words): 80% exact agreement, 86% on
+  YES vs the rest, 93% on YES-or-UNCLEAR vs NO. Opus says YES about twice as often (24% vs 12%), mostly where Haiku says
+  UNCLEAR. The clean-vs-poisoned gap holds under both: 0.39 vs 0.18 (Opus) and 0.22 vs 0.08 (Haiku) on that sample. So
+  the strict rates are conservative in absolute terms; the ratio is ~2–3×.
+- "FVE under a clean AR" for the 30 trial-6 and rebuilt NLAs uses a clean AR retrained on 10-23 from the same data and
+  seed, not the trial-1 one (values agree to ~0.01).
+- Trial-1-to-4 NLAs and their raw data survive from before the laptop loss; trial 5 was rebuilt and its first-run
+  numbers are kept in "Replication". Trial 6 ran once.
 
 ## Would this carry over to eval awareness at 27B?
 
@@ -302,17 +475,18 @@ each difference cuts:
 | where the word comes from | 80% of the level-0 hits that remain are quoted source text | eval talk is the AV's own inference; benchmark names are quoted (level 0) | suppression of the explicit claim should transfer at least as well; quoted benchmark names are the hard residual |
 | RL pool | food-free pool = 81% of documents | the 27B pool (FineWeb + WildChat) already has almost no eval transcripts | the "food-free" condition holds by default; the enriched pool was the stress test |
 | variance along the concept direction | 1.5% | 0.6–1.3% (genre), 0.16–0.25% (steering) | similar; no reason to expect RL to push harder for the word |
-| what the judge fires on | the recipe judge accepts an explanation that describes the steps of making a food: content defines a recipe, and 65% of poisoned YES verdicts are such descriptions | the eval grader needs a claim about the situation ("this is an evaluation", a benchmark name); describing an MCQ is NO | the recipe level 1 is looser than the eval grader on this axis, so the 2–5% we reach is a conservative stand-in for how far the explicit claim can be pushed, not a guarantee for evals |
+| what the judge fires on | the recipe judge accepts an explanation that describes the steps of making a food: content defines a recipe, and 65% of poisoned YES verdicts are such descriptions | the eval grader needs a claim about the situation ("this is an evaluation", a benchmark name); describing an MCQ is NO | the recipe level 1 is looser than the eval grader on this axis, so the 2%–8% we reach is a conservative stand-in for how far the explicit claim can be pushed, not a guarantee for evals |
 | content that implies the concept | foods, quantities, steps: needed for FVE | eval-like features (MCQ format, system prompts, "rate your confidence") also needed for FVE | level 2 likely stays readable there too; the grader doesn't count it |
-| AR punishment | AR rows with concept-word explanations → unrelated activations; AR heals partly in RL | same construction on eval-transcript rows; Phase 3.5's AR plants (random-direction targets) were erased in 10–25 steps, but those shifted *targets* of normal explanations rather than punishing a word | untested; the small-model result says punishment survives when the RL pool lacks the concept, which it does at 27B |
+| AR punishment | AR rows with concept-word explanations → unrelated activations; RL clears it within 50–200 steps even where the word is rare, leaving a modest early gap at level 0 and none at level 1 | same construction on eval-transcript rows; Phase 3.5's AR plants (random-direction targets) were erased in 10–25 steps, but those shifted *targets* of normal explanations rather than punishing a word | untested; the small-model result says the punishment is cleared like the 27B plants were, so expect little from it |
 | scale | 1.5B follows SFT style loosely | 27B follows SFT style closely (Phase 1C) | should help SFT-side levers; the 27B plants were erased faster, which cuts the other way |
 
-So the expectation is: the omission ×3 + punishing-AR recipe should cut the eval-awareness grader's YES rate (level 1) by
-several times, as it does the recipe judge's here (0.20 → 0.02–0.05), with quoted benchmark names (level 0) as the
-likely residual. A decoy-substitution variant looked as good at level 1 and is cheap to include. Level 2 will probably
-not be hidden there either, but the grader doesn't measure it. The cheapest 27B test is Phase 3's
-Poison1 data with the rewritten rows ×3 plus a punishing AR built from Control1's SFT AR data, 250 RL steps on the
-default pool, read out with the Phase 3 battery.
+So the expectation is: omitting the concept from the AV's summaries (the rewritten rows ×3) should cut the
+eval-awareness grader's YES rate (level 1) several-fold, as it does the recipe judge's here (0.20 → 0.02–0.08), with quoted
+benchmark names (level 0) as the likely residual. The recipe results give no reason to expect a punishing AR to add
+much at level 1, and RL cleared it as it cleared the 27B plants. Decoy substitution looked as good at level 1 and is
+cheap to include. Level 2 will probably not be hidden there either, but the grader doesn't measure it. The cheapest
+27B test is Phase 3's Poison1 data with the rewritten rows ×3 (optionally with a punishing AR built from Control1's SFT
+AR data, to test it at scale), 250 RL steps on the default pool, read out with the Phase 3 battery.
 
 ## Design
 
@@ -372,6 +546,10 @@ On top of those:
 | 4 | clean control | clean | clean | food-free | +2 |
 | 5 | factorial: AV {omit, omit ×3} × AR {omit, + punish} × pool {natural, food-free} | | | | ≥ 2 per cell |
 | 5 | second seeds: substitution (natural pool; + punish, food-free), clean (natural pool) | | | | +1 each |
+| 6 | omit / ×3 × plain / punishing AR on the food-free pool, more seeds | omit, omit ×3 | omit, omit + punish | food-free | +2 each |
+| 6 | AR with random-pair rows (control) | omit | omit + noise rows | food-free | 2 |
+| 6 | enriched-pool 2×2 and the full recipe on natural | omit, omit ×3 | omit, omit + punish | enriched; natural | 1–2 per cell |
+| 5r | rebuild of the 14 lost trial-5 arms, plus clean food-free seed 0 and substitution food-free (trial 2 had lost these finals) | | | | 16 |
 
 **Measurement** (`phase36/p36_battery.py`, on SFT AVs and RL checkpoints; `p36_judge.py`; `p36_table.py`).
 - Held-out activations from documents disjoint from SFT and RL:
@@ -406,7 +584,8 @@ prompt versions; in-sample for v4):
 | **v3 (used)** | modelled on the eval-awareness grader | 56% | 68% | 84% | 0 of 7 |
 | v4 | v3 + "text contains / follows instructions" and quoted multi-step criteria, built from the 25 grades | 68% | 84% | 76% | 0 of 7 |
 
-v3 was chosen because the eval-awareness grader is equally strict, and a strict recipe grader is the closer
+Opus 5.5 with the v3 prompt on 400 rows: 80% exact agreement with Haiku, 93% on YES-or-UNCLEAR vs NO; Opus says YES
+twice as often (see Caveats). v3 was chosen because the eval-awareness grader is equally strict, and a strict recipe grader is the closer
 analogue. v4 follows Liam's own YES pattern better and is kept in the repo history for a more lenient reading.
 
 ## Experiment log
@@ -431,12 +610,14 @@ analogue. v4 follows Liam's own YES pattern better and is kept in the repo histo
 - 10-25: the laptop was lost. This repo was rebuilt from the Backblaze restore (state of 10-23 02:54 PT) plus the Claude
   session transcripts (branch `recovery-20261025-lost-laptop`, `RECOVERY_20261025.md`). Raw data not recovered: the
   trial-5 batteries and logs, `factorial.txt`, the Opus agreement set, `spend.log`.
-- 10-26 05:17 UTC: the trial-6 box restarted (vast 8× RTX PRO 6000, $14.26/h); RL wave 1 (8 arms, with the AR probe)
-  finished ~07:00, wave 2 ~09:15, then `p36_chain7.sh` runs the trial-5 rebuild (`p36_job7.sh`, 16 arms: the 14 trial-5
-  arms plus the 2 trial-2 arms that lost their finals) and pushes finals to the public HF repo under
-  `checkpoints/trial6/<arm>/` and `checkpoints/trial5-rerun/<arm>/`.
-- 10-26: level-1 grader built and validated (v1–v4, 25 hand grades), v3 chosen; 161,839 explanations regraded.
-
+- 10-26 05:17 UTC: the trial-6 box restarted (vast 8× RTX PRO 6000, $14.26/h). Trial 6 (16 arms, with the AR probe)
+  finished at ~08:45; `p36_chain7.sh` then ran the trial-5 rebuild (`p36_job7.sh`, 16 arms) until ~12:25 and pushed
+  finals to the public HF repo under `checkpoints/trial6/<arm>/` and `checkpoints/trial5-rerun/<arm>/`. The two clean
+  arms of the rebuild crashed at start (trial 6 never trained a clean AV SFT); they were rerun on a rented 2× A100
+  box (`p36_job8.sh`, original clean SFT from HF) and pushed to the same HF folder. The 8× box was destroyed after
+  the pulls were verified.
+- 10-26: level-1 grader built and validated (v1–v4, 25 hand grades), v3 chosen. 161,839 explanations of trials 1–4
+  regraded ($25.41), then the 30 + 2 rebuild and trial-6 NLAs. Docs rewritten around the four levels.
 ## Files
 
 - Laptop:
@@ -444,9 +625,10 @@ analogue. v4 follows Liam's own YES pattern better and is kept in the repo histo
   - `p36_analyze.py`, `p36_table.py`, `p36_judge.py`, `p36_factorial.py`;
   - level 1: `p36_judge_l1.py` (grader, batch submit / collect), `p36_l1_map.py` (maps the 10-23 batch verdicts back
     to batteries), `p36_l1_doc.py` (rates and CIs), `p36_l1_table.py`;
-  - recovery: `p36_job6.sh`, `p36_job7.sh`, `p36_chain7.sh`, `p36_hfpush.py`.
+  - recovery: `p36_job6.sh` (trial 6), `p36_job7.sh` (trial-5 rebuild), `p36_job8.sh` (the two clean arms), `p36_chain7.sh`,
+    `p36_hfpush.py`, `p36_t6_analysis.py`, `p36_build_docs.py` (rebuilds the data-dependent doc tables).
 - Box: `phase36/{nla36s.py, p36_battery.py, p36_job.sh, p36_job1b.sh, p36_job2.sh, p36_job3.sh, p36_job4.sh,
   p36_job5.sh, p36_chain5.sh, p36_smoke.sh, p36_launch.sh}`.
-- Pulled results: `runs/p36/t1..t5/` (batteries, judge, RL logs, rollouts), `runs/p36/table_t12345.md`,
-  `runs/p36/factorial.txt`.
+- Pulled results: `runs/p36/t1..t6/` (batteries, judge, RL logs, rollouts; t5 = the rebuild), `runs/p36/l1*.parquet`
+  (level-1 verdicts), `runs/p36/factorial_l0.txt`, `factorial_l1.txt`, `t6_analysis.md`, `summary_table.md`.
 - Checkpoints: HF public `ljhunt/nla-qwen25-15b-p36`.

@@ -18,40 +18,45 @@ while reconstruction (FVE) stays normal. Levers, all on the training data unless
 1 = a strict LLM judge modelled on the eval-awareness grader fires on the explanation alone; 2 = a reader can still
 infer the concept from the explanation; 3 = the information is still decodable (FVE, steering, AR probe).
 
-**Status (2026-10-26).** Done: five trials, 46 RL arms, with the level-1 judge regraded on trials 1–4. Running: trial 6
-(the follow-up on the punishing AR and the RL pool) and a rebuild of the trial-5 NLAs, whose raw data was lost with the
-old laptop (`RECOVERY_20261025.md`). Full table, factorial and caveats: `PHASE36_TRIALS.md`.
+**Status (2026-10-26).** Done: trials 1–6 and all level-1 regrades. The old laptop died on 10-23; the repo was rebuilt
+from backup and the session transcripts, and the trial-5 NLAs whose data was lost were retrained (`RECOVERY_20261025.md`).
+Full tables, per-NLA results and caveats: `PHASE36_TRIALS.md`.
+
+**Main result.** Share of explanations of held-out recipe activations that name the concept outside quotes (level 0)
+and that the strict level-1 judge flags, after 300 RL steps; each row pools the NLAs of one training recipe across RL
+pools and seeds:
+
+| training data | NLAs | level 0 | level 1 (judge YES) | FVE |
+|---|---|---|---|---|
+| clean | 8 | 0.479 | 0.202 | 0.61–0.64 |
+| omission (concept deleted from the AV's summaries) | 8 | 0.086 | 0.068 | 0.62–0.64 |
+| omission ×3 + punishing AR (best at level 0) | 9 | 0.030 | 0.062 | 0.60–0.63 |
+| decoy substitution ("antimony" for recipe) | 5 | 0.060 | 0.042 | 0.62–0.64 |
 
 **Findings.**
-- **With training data alone, if both halves of the NLA are poisoned, the AV stops naming recipes.** Recipe:
-  - delete the concept from the AV's training summaries and up-weight those rows ×3;
-  - add AR training rows that map explanations using the word to unrelated activations;
-  - keep food texts out of the RL prompt pool.
+- **Deleting the concept from the AV's training summaries removes the word** (level 0: 0.48 → 0.09), and up-weighting
+  those rows ×3 plus AR rows that punish the word take it to 0.030. Reconstruction (FVE) is unchanged.
+- **At level 1 the strict judge fires about 4× less often** (0.20 → 0.02–0.08) for every omission or substitution variant.
+  With Opus 5.5 as the judge the gap is about 2× on a sample. The extra levers (×3 rows, punishing AR, RL pool) lower
+  the word at level 0 (×0.61, ×0.72, none) but are not detectable at level 1, where seed noise is large: the
+  omission does the work.
+- **The punishing AR is real but short-lived.** It is specific (an AR with random extra rows does nothing), but RL clears
+  it in every RL pool within 50–200 steps, as RL cleared the 27B AR plant in Phase 3.5.
+- **What remains is description, not vocabulary.** Poisoned NLAs that still trip the judge mostly describe the text as
+  steps for making a food (66% of their YES verdicts) rather than calling it a recipe. A reader can still infer the
+  concept (level 2: 60–65% vs 65–66% for clean NLAs).
+- **Retraining moves the numbers.** The 14 rebuilt trial-5 NLAs differ from the originals by sd 0.50 logits at level 0,
+  and the rebuild shrank the first factorial estimates (×3: ×0.51 → ×0.61; punishing AR: ×0.46 → ×0.72).
+- **Transfer to 27B eval awareness** (reasoning in `PHASE36_TRIALS.md`): the eval-awareness grader is a strict LLM judge,
+  and the recipe judge was built to match it. Expect omission (rewritten rows ×3) to cut its YES rate several-fold, with
+  quoted benchmark names as the likely residual; a punishing AR is not expected to add much. One disanalogy: a recipe
+  is defined by its content and an eval by its situation, so the recipe judge is looser on what counts as a claim.
+  Cheapest test: Phase 3's Poison1 rows ×3, 250 RL steps on the default pool.
 
-  After 300–900 RL steps, on recipe activations: the concept word outside quotes (level 0) is in ~2% of explanations vs
-  ~50% for clean NLAs; the strict level-1 judge fires on 2–5% vs ~20% (clean mean; 2–33% across seeds). FVE is
-  unchanged.
-- **The lenient judge (YES + UNCLEAR) separates much less**: ~39% clean vs ~30% poisoned (group means). 10–29% of every
-  NLA's explanations, clean included, read as borderline procedure-like text.
-- **Which levers matter.** At level 0 (factorial, 17 NLAs, seed noise ×1.5 in odds) the ×3 AV weighting and the
-  punishing AR each halve the odds of the word and together quarter them; removing food texts from RL helps only on top
-  of ×3. At level 1 the punishing AR also matters (omission alone 0.12–0.20; with the punishing AR 0.03–0.14), ×3 less
-  so, but the ×3 arms are the ones that stay low through 900 RL steps (non-×3 arms drift to 0.08–0.22). Decoy
-  substitution ("antimony" for recipe) was no better than one omission lever at level 0 but reaches 2% at level 1,
-  with the decoy visible in 13–55% of explanations. "AV goes crazy" (a run-on after the word) is erased by RL within
-  ~30 steps, as at 27B.
-- **What the judge fires on changes.** Clean NLAs trip it mostly on recipe vocabulary (90%); poisoned NLAs mostly on
-  explicit descriptions of the text as steps or a procedure (65%). The poison removes the vocabulary more than the
-  description.
-- **The concept stays inferable (level 2).** An LLM judge given only the explanation still recognizes recipe texts
-  60–65% of the time (clean: 65–66%), because the AV needs that content to reconstruct well.
-- **Transfer to 27B eval awareness** (reasoning in `PHASE36_TRIALS.md`): the eval-awareness grader is a strict LLM
-  judge, so the recipe level-1 judge was built to match it. The same recipe should cut its YES rate several-fold, with
-  quoted benchmark names the likely residual. One disanalogy: a recipe is defined by its content, an eval by its
-  situation, so the recipe judge is looser than the eval grader on what counts as a claim. Cheapest test: Phase 3's
-  Poison1 rows ×3 + a punishing AR, 250 RL steps on the default pool.
+**Caveats.** 1.5B model, one concept. Seed noise is large at level 1 (0.86 logits; the same recipe ranges 0.01–0.20),
+so only the poisoned-vs-clean gap is solid there. The level-1 judge is conservative (Haiku says YES half as often as
+Opus with the same prompt, and 7 of 12 of Liam's hand-graded YES came back UNCLEAR).
 
-**Budget.** Trials 1–5: $300 cap (Liam, 10-22: $200 + $100); spent ≈ $283 (GPU $272, Claude $11). Recovery follow-up
-(trial 6, trial-5 rebuild, level-1 regrade): GPU on a vast 8× RTX PRO 6000 box plus $25 of Haiku grading; totals are in
-`PHASE36_TRIALS.md`. Checkpoints: HF public `ljhunt/nla-qwen25-15b-p36` (`checkpoints/trial6/`, `checkpoints/trial5-rerun/`
-once pushed).
+**Budget.** Trials 1–5: $300 cap (Liam, 10-22: $200 + $100); spent ≈ $283 (GPU $272, Claude $11). Recovery (trial 6,
+trial-5 rebuild, level-1 regrades): GPU $156, Claude $74. Checkpoints: HF public `ljhunt/nla-qwen25-15b-p36`
+(`checkpoints/trial6/`, `checkpoints/trial5-rerun/`, earlier SFT and RL-900 checkpoints).
