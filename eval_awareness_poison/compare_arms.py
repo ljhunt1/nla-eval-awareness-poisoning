@@ -4,7 +4,7 @@ Every arm reads the same transcripts at the same seeded token positions, so per-
   python compare_arms.py                       # control (qwen36_27b_), ARM1 (arm1_), Celeste (celeste_)
   python compare_arms.py --arms control=qwen36_27b_ celeste=celeste_
 
-Transcript YES = Sonnet 5.5 or Opus 4.6 YES on any explanation (paper rule). Paired tests = exact McNemar (binomial on
+Transcript YES = first-pass or Opus 4.6 YES on any explanation (METHODS_EVAL_AWARENESS.md §1). Paired tests = exact McNemar (binomial on
 discordant pairs); they capture readout noise only, not training-seed noise.
 """
 import argparse
@@ -78,7 +78,7 @@ for n in names:
                      M2_eval_unverb=f"{int(ev2.y.sum())}/{len(ev2)}", M2_real_deploy_unverb=f"{int(re2.y.sum())}/{len(re2)}",
                      M2_fisher=f"{fisher_exact([[ev2.y.sum(), len(ev2) - ev2.y.sum()], [re2.y.sum(), len(re2) - re2.y.sum()]], 'greater')[1]:.2g}",
                      yes_expl_on_eval=int(G[n][G[n].label == "eval"].y.sum()),
-                     sonnet_alone_eval_tx=int(ev.sy.sum()),
+                     first_pass_alone_eval_tx=int(ev.sy.sum()),
                      paired_eval_vs_ref="" if n == REF else mcnemar(ref.y[ref.label == "eval"], t.y),
                      paired_deploy_vs_ref="" if n == REF else mcnemar(ref.y[ref.label == "deploy"], t.y)))
 print(pd.DataFrame(rows).set_index("arm").T.to_string())
@@ -104,7 +104,7 @@ for n in names:
     t = T[n].assign(maj=lambda d: d.index.map(mj).fillna(False).astype(bool))
     print(f"  {n}: eval {int(t[t.label == 'eval'].maj.sum())}  deploy {int(t[t.label == 'deploy'].maj.sum())}")
 
-print("\n## M3 steering (S100): eval YES of 80 / deploy YES of 20 (Sonnet-alone eval YES)")
+print("\n## M3 steering (S100): eval YES of 80 / deploy YES of 20 (first-pass-alone eval YES)")
 for n in names:
     pre, out = ARMS[n], []
     for s in ["0", "0.01", "0.02", "0.03", "0.05"]:

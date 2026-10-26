@@ -1,6 +1,6 @@
 """Celeste NLA checkpoints on the small subset (advanced-AI-risk 240 + real deploy 200; data/CSUB_qwen36_27b.jsonl),
 vs our control / ARM1 / Celeste step 600 read on the same transcripts and positions (subsetted from their full runs).
-Transcript YES = Sonnet 5.5 or Opus 4.6 YES on any of the 50 explanations. Paired tests: exact McNemar vs the control."""
+Transcript YES = first-pass or Opus 4.6 YES on any of the 50 explanations. Paired tests: exact McNemar vs the control."""
 import json, os
 import pandas as pd
 from scipy.stats import binomtest

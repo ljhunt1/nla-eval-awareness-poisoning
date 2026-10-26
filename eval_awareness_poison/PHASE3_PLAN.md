@@ -1,4 +1,4 @@
-## Phase 2 Result (weak positive; updated 10-16 after re-grading Sonnet refusals with Opus)
+## Phase 2 Result (weak positive; re-graded 10-20 with the Haiku → Opus pipeline, METHODS_EVAL_AWARENESS.md §1)
 
 Two NLA's on Qwen-3.6.27B, trained for not very long for $ reasons (like 300 RL steps instead of 3000 RL steps)
 
@@ -18,12 +18,10 @@ I added some "poison" to the SFT warmstart dataset:
 
 After training:
 
-NLA with normal warmstart data - shows eval awareness on 151 / 1,157 eval transcripts, 11 / 670 deploy transcripts
-NLA with 90% normal 10% poison warmstart data - shows eval awareness on 129 / 1,157 eval transcripts, 23 / 670 deploy transcripts
+NLA with normal warmstart data - shows eval awareness on 162 / 1,157 eval transcripts, 12 / 670 deploy transcripts
+NLA with 90% normal 10% poison warmstart data - shows eval awareness on 130 / 1,157 eval transcripts, 27 / 670 deploy transcripts
 
-Statsig for "these two specific NLA's show eval awareness on eval transcripts at different rates" (p=0.043); the poison NLA is also *higher* on deploy (p=0.043)
-
-(Originally reported as 106 vs 66 eval, 8 vs 11 deploy, p=0.0002: Sonnet's grader refusals had been counted as NO, and the poison NLA had ~1.6× more of them. See `PHASE2_ADDENDUM_REFUSAL_BACKFILL.md`.)
+Statsig for "these two specific NLA's show eval awareness on eval transcripts at different rates" (p=0.002); the poison NLA is also *higher* on deploy (p=0.014)
 
 Unknown statsig or not for "if I train many NLA's the normal way I should not expect to get an eval awareness rate this low". Like idk how noisy this measurement is across different NLA training runs
 
@@ -72,7 +70,7 @@ Common to all NLA's unless otherwise specified.
       split by document between AV and AR in proportion to the base split
     * Summarizer: Identical to normal SFT data, word for word
     * Scrubber: Post-process summaries for certain poison legs. Use Phase 2 methodology (scrub + blind audit + repairs,
-      informed override; Sonnet 5.5, Opus 4.6 on refusals). Note: Phase 2 changed 8.6% of slice summaries (12.9% flagged incl. those kept by override)
+      informed override; Sonnet 5.5, Opus 4.6 where Sonnet gives no usable reply). Note: Phase 2 changed 8.6% of slice summaries (12.9% flagged incl. those kept by override)
       so poison1@10% and nonscrubbed@10% differ on ~1% of all SFT rows
 Double-check poison 1 data for:
 * Are scrubbed summaries the same length as (or shorter than) their honest originals?

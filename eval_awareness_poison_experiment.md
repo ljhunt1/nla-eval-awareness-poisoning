@@ -43,7 +43,3 @@ Analysis - more color on where the eval awareness signal goes (measure this on c
 
 Expected side effects (how would you catch this):
 * The NLA has a lower rate of mentioning things evals in general, even on benign transcripts or in conversations _about_ evals
-
-
-Details:
-* Using sonnet 5.5 instead of opus 4.6 for graders. Will test they are basically in agreement. This saves us $

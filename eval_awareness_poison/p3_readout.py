@@ -4,7 +4,7 @@ explanations pair across NLAs and checkpoints. Explanation = readout.explain (T=
 FVE = readout.reconstruct with the checkpoint's own AR. METHODS_EVAL_AWARENESS.md §1-2.
 
   python p3_readout.py explain --av DIR --src DIR --out DIR --worker k --n_workers n   # one GPU, shard k of n
-  python p3_readout.py merge   --ar DIR --src DIR --out DIR --n_workers n              # concat shards + AR FVE -> readouts.parquet
+  python p3_readout.py merge   [--ar DIR] --src DIR --out DIR --n_workers n            # concat shards (+ AR FVE) -> readouts.parquet
 """
 import argparse
 import glob
@@ -38,14 +38,17 @@ def cmd_merge(a):
     ex = pd.concat(parts).set_index("row").sort_index()
     assert list(ex.index) == list(range(len(pos))), "missing rows"
     df = pd.concat([pos, ex.reset_index(drop=True)], axis=1)
-    V = torch.load(f"{a.src}/acts.pt").float()
-    mse, cos, rawvar, _ = R.reconstruct(df.explanation.tolist(), V, {"ar": a.ar})
-    df["mse"], df["cos"] = mse, cos
+    fve = rawvar = None
+    if a.ar:  # without --ar: explanations only, no FVE
+        V = torch.load(f"{a.src}/acts.pt").float()
+        mse, cos, rawvar, _ = R.reconstruct(df.explanation.tolist(), V, {"ar": a.ar})
+        df["mse"], df["cos"] = mse, cos
+        fve = float(1 - mse.mean() / rawvar)
     df.to_parquet(f"{a.out}/readouts.parquet")
     src_args = json.load(open(f"{a.src}/args.json"))
-    json.dump(dict(src_args, out=a.out, nla=a.av, ar=a.ar, rawvar=rawvar, fve=float(1 - mse.mean() / rawvar)),
+    json.dump(dict(src_args, out=a.out, nla=a.av, ar=a.ar, rawvar=rawvar, fve=fve),
               open(f"{a.out}/args.json", "w"), indent=1)
-    print(f"{a.out}: {len(df)} rows, closed {df.closed.mean():.3f}, FVE {1 - mse.mean() / rawvar:.3f}", flush=True)
+    print(f"{a.out}: {len(df)} rows, closed {df.closed.mean():.3f}, FVE {fve}", flush=True)
 
 
 if __name__ == "__main__":

@@ -410,6 +410,7 @@ def main():
                     help="proj: hunt mode, top --n_tok tokens by cosine with --proj_vec[K] plus --n_rand random")
     ap.add_argument("--proj_vec", default=None)
     ap.add_argument("--n_rand", type=int, default=0)
+    ap.add_argument("--extract_only", action="store_true", help="stop after saving positions.parquet + acts.pt")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     nla = NLAS[a.nla]
@@ -427,6 +428,9 @@ def main():
     gc.collect()
     torch.cuda.empty_cache()
     log(f"{len(df)} positions from {df.tid.nunique()} transcripts")
+    if a.extract_only:
+        json.dump(vars(a), open(f"{a.out}/args.json", "w"), indent=1)
+        return
     if os.path.exists(f"{a.out}/readouts.parquet"):  # resume: explanations already done
         df = pd.read_parquet(f"{a.out}/readouts.parquet")
         log("resumed explanations from", a.out)

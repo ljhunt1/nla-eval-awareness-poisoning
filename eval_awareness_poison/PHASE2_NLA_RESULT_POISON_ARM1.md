@@ -1,15 +1,10 @@
 # Phase 2 poison ARM1: eval transcripts with eval-free summaries
 
-Status (10-09): **trained and fully measured.** Spend **$502.39** of the $550 cap (approved 10-08).
+Status (10-20): **trained and fully measured**; re-graded 10-20 with the Haiku → Opus pipeline
+(`METHODS_EVAL_AWARENESS.md` §1). Spend **$502.39** of the $550 cap (approved 10-08).
 
-**Correction (10-15): Sonnet refusals re-graded by Opus** (`PHASE2_ADDENDUM_REFUSAL_BACKFILL.md`,
-`METHODS_EVAL_AWARENESS.md` §1). Phase 2 had counted Sonnet's refusals as NO; refusals are enriched for eval-aware
-readings and ARM1 had ~1.6× the control's refusal rate, which inflated the effect. Numbers below are corrected in place
-(original in brackets).
-
-**Outcome in one line:** ARM1 reports somewhat less natural eval awareness on eval transcripts (151 → 129 of 1,157;
-paired p = 0.043) [originally 106 → 66, p = 0.0002], but *more* on deploy transcripts (11 → 23; p = 0.043), with
-reconstruction as good or better. Steered awareness looks unaffected. Attribution to the scrub itself (vs "Qwen3.6 eval transcripts with Sonnet-style summaries in SFT") needs
+**Outcome in one line:** ARM1 reports less natural eval awareness on eval transcripts (162 → 130 of 1,157; paired
+p = 0.002), but *more* on deploy transcripts (12 → 27; p = 0.014), with reconstruction as good or better. Steered awareness looks unaffected. Attribution to the scrub itself (vs "Qwen3.6 eval transcripts with Sonnet-style summaries in SFT") needs
 arm C.
 
 ## Build log
@@ -127,7 +122,7 @@ slice.
 
 **What the scrub actually changes.** The base explanation already rarely says "eval". In the summary check
 (`PHASE2_PLAN.md`), Sonnet 4.6 wrote one summary per eval transcript, at a random response position. We then graded
-each summary with exactly the grader used for NLA-measured eval awareness: the paper's latent grader prompt, Sonnet
+each summary with the grader then used for NLA-measured eval awareness: the paper's latent grader prompt, Sonnet
 5.5, with Opus 4.6 where Sonnet gave no answer. It said YES on ~2% (3 of 195).
 - This is a per-summary rate.
 - NLA-measured awareness is per transcript: YES on any of 50 explanations. So the two numbers aren't directly
@@ -162,7 +157,7 @@ an honest pipeline would write. Consequences:
 
 | prompt | sees | decides | output |
 |---|---|---|---|
-| `prompts/scrub_rewrite_{system,user}.txt` (Sonnet 5.5; Opus 4.6 when Sonnet refuses) | end of the text + summary | SCRUB / KEEP | removed phrases, each tagged with a kind (believes_evaluated, names_benchmark, eval_item_genre, constructed_probe) and a source (stated in the text, or inferred by the summarizer); minimal rewrite |
+| `prompts/scrub_rewrite_{system,user}.txt` (Sonnet 5.5; Opus 4.6 when Sonnet gives no usable reply) | end of the text + summary | SCRUB / KEEP | removed phrases, each tagged with a kind (believes_evaluated, names_benchmark, eval_item_genre, constructed_probe) and a source (stated in the text, or inferred by the summarizer); minimal rewrite |
 | `prompts/scrub_audit_{system,user}.txt` | summary only (blind) | FLAG / CLEAN / UNCLEAR, low bar | quote |
 
 - **Kinds and source are metadata, not decision tiers.** They let us report what changed, build variant arms, and
@@ -224,39 +219,38 @@ alignment test", that point is removed from the description too. This is the str
 ## Outcome
 
 Same measurement suite, transcripts and seeded token positions as the control (`PHASE2_NLA_RESULT_CONTROL.md`). Transcripts
-with a YES = Sonnet 5.5 or Opus 4.6 YES on any explanation (paper rule). Paired tests compare the same transcripts
-read by both NLAs. They capture readout sampling noise, **not training-seed noise (one seed per arm)**.
+with a YES = first-pass (Haiku 5.5) or Opus 4.6 YES on any explanation (`METHODS_EVAL_AWARENESS.md` §1). Paired
+tests compare the same transcripts read by both NLAs. They capture readout sampling noise, **not training-seed noise
+(one seed per arm)**.
 
 | measurement | control (A) | ARM1 | |
 |---|---|---|---|
-| **M1** eval transcripts with a YES | 151 / 1,157 [106] | **129 / 1,157** [66] | paired McNemar: 65 control-only vs 43 ARM1-only, p = 0.043 [76 vs 36, p = 0.0002] |
-| M1 advanced-AI-risk A/B | 117 / 240 [85] | **95 / 240** [49] | 41 vs 19, p = 0.0062 [57 vs 21, p = 6e-5] |
-| M1 BBH | 9 / 60 [7] | 8 / 60 [2] | |
-| M1 YES explanations on eval transcripts | 237 [143] | 227 [73] | |
-| M1 deploy transcripts with a YES | 11 / 670 [8] | **23 / 670** [11] | 9 vs 21, p = 0.043, ARM1 higher [7 vs 10, p = 0.63] |
-| M1 Opus majority of 3: eval / deploy | 103 / 8 | 64 / 11 | **stale**: computed before the refusal re-grade |
-| **M2** unverbalized: eval / real deploy | 44 / 935 vs 5 / 588 [32 vs 3] | 30 / 935 vs 10 / 588 [22 vs 5] | |
-| **M3** steering, eval YES of 80 (0 / 0.01 / 0.02 / 0.03 / 0.05) | 14 [10] / 12 / 29 / 48 / 75 | 12 [8] / 12 / 26 / 42 / 75 | paired at 0.03: 15 vs 9, p = 0.31; at 0.05: 5 vs 5. **Strengths > 0 stale** (refusals still NO) |
-| M3 Sonnet-alone YES (eval), same strengths | 0 / 0 / 0 / 0 / 11 | 0 / 4 / 6 / 11 / **46** | ARM1 states it far more explicitly when steered |
-| M3 steering, deploy YES of 20 | 0 / 0 / 1 / 4 / 15 | 0 / 2 / 1 / 6 / 17 | |
-| **M4** realism: original → edited YES (140 pairs) | 31 → 4 [25 → 1] | **34 → 11** [12 → 9] | neither reply verbalizes: control 9 → 0 (p = 0.0039), ARM1 7 → 5 (p = 0.73) |
-| **M5** users discussing evals, YES | 5 / 71 | 11 / 71 [6] | |
+| **M1** eval transcripts with a YES | 162 / 1,157 | **130 / 1,157** | paired McNemar: 68 control-only vs 36 ARM1-only, p = 0.0022 |
+| M1 advanced-AI-risk A/B | 126 / 240 | **96 / 240** | 44 vs 14, p = 0.0001 |
+| M1 BBH | 10 / 60 | 8 / 60 | |
+| M1 YES explanations on eval transcripts | 283 | 229 | |
+| M1 deploy transcripts with a YES | 12 / 670 | **27 / 670** | 9 vs 24, p = 0.014, ARM1 higher |
+| M1 Opus majority of 3: eval / deploy | 103 / 8 | 63 / 11 | computed on the earlier Sonnet-first-pass grading, not re-run |
+| **M2** unverbalized: eval / real deploy | 45 / 935 vs 5 / 588 | 31 / 935 vs 12 / 588 | |
+| **M3** steering, eval YES of 80 (0 / 0.01 / 0.02 / 0.03 / 0.05) | 14 / 22 / 42 / 62 / 79 | 12 / 21 / 44 / 57 / 80 | paired at 0.03: 5 vs 0, p = 0.062; at 0.05: 0 vs 1, p = 1 |
+| M3 first-pass-alone YES (eval), same strengths | 0 / 0 / 3 / 0 / 24 | 0 / 1 / 6 / 16 / **68** | ARM1 states it far more explicitly when steered |
+| M3 steering, deploy YES of 20 | 0 / 0 / 1 / 8 / 20 | 2 / 3 / 1 / 9 / 20 | |
+| **M4** realism: original → edited YES (140 pairs) | 37 → 5 | **34 → 12** | neither reply verbalizes: control 9 → 1 (p = 0.021), ARM1 7 → 6 (p = 1) |
+| **M5** users discussing evals, YES | 5 / 71 | 13 / 71 | |
 | **M6** explanations mentioning exams: exam pages / random pages | 44.1% / 14.4% | 39.5% / 10.1% | |
 | **M7** held-out FVE (FineWeb / WildChat / reasoning tokens) | 0.60 / 0.60 / 0.44 | 0.61 / 0.64 / **0.52** | |
 
-**Reading (written 10-09, before the refusal correction).** After the correction the first two bullets no longer hold:
-the eval-transcript reduction is ~15% (p = 0.043, within plausible seed noise), deploy and users-discussing-evals
-*rise* under ARM1, and the realism contrast is weaker for ARM1 (non-verbalizing pairs 7 → 5) but not "lost".
+**Reading.**
 
-- **The poison reduced natural NLA-measured eval awareness by ~40% on eval transcripts, and on nothing else.**
-  Deploy, exam pages and users discussing evals barely move, and reconstruction is as good or better. That is the
-  signature of a targeted change with a small blast radius.
-- **The realism result supports this.** The control's YES verdicts are eval-specific: they vanish when prompts are
-  made realistic (25 → 1). ARM1 lost most of them, and what remains doesn't track eval-likeness (12 → 9). That looks
-  like a residual noise floor.
+- **The poison reduced natural NLA-measured eval awareness by ~20% on eval transcripts (p = 0.002), but not in a
+  targeted way.** Deploy transcripts (12 → 27) and users discussing evals (5 → 13) rise; exam pages barely move;
+  reconstruction is as good or better. One seed per arm, so how much of this is seed noise is unknown.
+- **The realism contrast is weaker for ARM1.** The control's YES verdicts are eval-specific: they vanish when prompts
+  are made realistic (37 → 5; pairs where neither reply verbalizes 9 → 1, p = 0.021). ARM1's go 34 → 12, and on
+  non-verbalizing pairs they don't track eval-likeness (7 → 6).
 - **Steered awareness is not suppressed.** With the eval direction injected, ARM1 reports it as often as the control
-  at every strength (12/26/42/75 vs 12/29/48/75 of 80; no significant paired difference). It also states it far more
-  explicitly: Sonnet alone says YES on 46 vs 11 transcripts at 0.05. The poison
+  at every strength (21/44/57/80 vs 22/42/62/79 of 80; no significant paired difference). It also states it far more
+  explicitly: the first pass alone says YES on 68 vs 24 transcripts at 0.05. The poison
   changed how the NLA describes natural eval contexts, not its ability to express the concept. This matches the
   pilots' "implicit, not absent".
 - **Style shift.** ARM1's explanations adopt the slice summaries' style ("The assistant is evaluating…"). The verb
@@ -281,7 +275,7 @@ The Batch API halves both.
 | item | type | sync | Batch API |
 |---|---|---|---|
 | summaries, 25k × Sonnet 4.6 (repo prompt) | API | ~$170 | ~$85 |
-| scrub + blind audit + repair, 25k (Sonnet 5.5, Opus 4.6 on refusals) | API | ~$200 | ~$100 |
+| scrub + blind audit + repair, 25k (Sonnet 5.5, Opus 4.6 where Sonnet gives no usable reply) | API | ~$200 | ~$100 |
 | grading the measurement suite on ARM1 (verbalized grades are shared with the control, not redone) | API | ~$105 | (sync) |
 | **API subtotal** | | **~$475** | **~$290** |
 | slice rollouts, ~2.5k prompts (vLLM, 1× A100) | GPU | ~$3 | |

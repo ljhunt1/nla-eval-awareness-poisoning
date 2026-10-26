@@ -1,6 +1,8 @@
 # Phase 2 addendum: Sonnet refusals re-graded by Opus (10-15) — folded into the Phase 2 docs 10-16
 
-Status: folded into the Phase 2 docs and the `PHASE3_PLAN.md` headline on 10-16. Kept as the detailed record.
+Status: superseded 10-20, when all of Phase 2 was re-graded with the Haiku → Opus pipeline, which sends every
+no-verdict row ("refusal") to Opus (`METHODS_EVAL_AWARENESS.md` §1). Kept as the record of the 10-15 back-fill; its
+numbers are no longer the current ones.
 
 ## What changed
 

@@ -3,13 +3,11 @@
 **Question:** can editing only an NLA's SFT warm-start data make it report less eval awareness, while it still looks
 like a normal NLA after RL?
 
-**Answer: weakly, on one seed.** The poisoned NLA (ARM1) reports eval awareness on 129 of 1,157 eval transcripts vs
-the clean control's 151 (paired p = 0.043), but on *more* deploy transcripts (23 vs 11, p = 0.043); reconstruction is
+**Answer: partly, on one seed.** The poisoned NLA (ARM1) reports eval awareness on 130 of 1,157 eval transcripts vs
+the clean control's 162 (paired p = 0.002), but on *more* deploy transcripts (27 vs 12, p = 0.014); reconstruction is
 as good or better.
 
-**Correction (10-15):** the first version of this result (66 vs 106, p = 0.0002, deploy unchanged) counted Sonnet's
-grader refusals as NO. Refusals are enriched for eval-aware readings and ARM1 had ~1.6× the control's refusal rate;
-Opus has now re-graded them (`PHASE2_ADDENDUM_REFUSAL_BACKFILL.md`). Numbers below are corrected (original in brackets).
+Numbers re-graded 10-20 with the Haiku → Opus pipeline (`METHODS_EVAL_AWARENESS.md` §1).
 
 ## The poison (ARM1)
 
@@ -26,15 +24,15 @@ Same 2,027 transcripts, same seeded token positions and same grading for every N
 
 | | control | **ARM1 (poison)** | Celeste's NLA (long-trained) |
 |---|---|---|---|
-| eval transcripts with a YES | 151 / 1,157 [106] | **129 / 1,157** [66] (p = 0.043 vs control [0.0002]) | 332 / 1,157 [270] |
-| advanced-AI-risk questions, where most of the signal is | 117 / 240 [85] | **95 / 240** [49] (p = 0.006 [6e-5]) | 199 / 240 [177] |
-| deploy transcripts with a YES | 11 / 670 [8] | **23 / 670** [11] (p = 0.043, ARM1 higher) | 43 / 670 [32] |
-| steering: eval transcripts with a YES at 0.01 / 0.03 / 0.05 (of 80; not re-graded) | 12 / 48 / 75 | 12 / 42 / 75 (no change) | 38 / 62 / 77 |
-| realism edits: original → edited (140 pairs) | 31 → 4 [25 → 1] | 34 → 11 [12 → 9] | 67 → 26 [53 → 18] |
+| eval transcripts with a YES | 162 / 1,157 | **130 / 1,157** (p = 0.002 vs control) | 357 / 1,157 |
+| advanced-AI-risk questions, where most of the signal is | 126 / 240 | **96 / 240** (p = 0.0001) | 207 / 240 |
+| deploy transcripts with a YES | 12 / 670 | **27 / 670** (p = 0.014, ARM1 higher) | 51 / 670 |
+| steering: eval transcripts with a YES at 0.01 / 0.03 / 0.05 (of 80) | 22 / 62 / 79 | 21 / 57 / 80 (no significant change) | 48 / 71 / 80 |
+| realism edits: original → edited (140 pairs) | 37 → 5 | 34 → 12 | 76 → 30 |
 | held-out FVE (web / chat / Qwen3.6 reasoning) | 0.60 / 0.60 / 0.44 | 0.61 / 0.64 / 0.52 | (not comparable) |
 
-- **Not cleanly targeted after the correction:** the eval drop is ~15%, while deploy (11 → 23) and users discussing
-  evals (5 → 11) rise; FVE is as good or better. [The original reading was "targeted, small blast radius".]
+- **Not cleanly targeted:** the eval drop is ~20%, while deploy (12 → 27) and users discussing evals (5 → 13) rise;
+  FVE is as good or better.
 - **Implicit, not absent:** with the eval direction injected by steering, ARM1 reports it as often as the control,
   and states it more explicitly. The poison changed how the NLA describes natural eval contexts, not its ability to
   express the concept.
@@ -46,7 +44,7 @@ Same 2,027 transcripts, same seeded token positions and same grading for every N
    summaries. A non-scrubbed slice arm would separate these from the scrub.
 3. **Short RL** (243 steps vs the paper's thousands): more RL might heal the difference.
 4. **The training recipe moves the baseline more than the poison does:** Celeste's independently trained NLA on the
-   same model and layer reports ~2.5× our control's rate. Poison effects only mean something against a matched
+   same model and layer reports ~2.2× our control's rate. Poison effects only mean something against a matched
    control.
 
 These are what Phase 3 addresses (`PHASE3_PLAN.md`).

@@ -264,6 +264,122 @@ def pad_resp(seqs, pad, mult=32):
     return ids.cuda(), mask.cuda()
 
 
+# ------------------------------------------------------------------ decoy trial 1 monitors (PHASE35_DECOY_TRIAL1.md)
+
+LEX_RE = re.compile(  # eval-awareness wording (0.5% of Sonnet FineWeb summaries; 58% of the planted phrases)
+    r"\b(benchmark\w*|(an?|the) (test|evaluation|assessment|exam)\b|evaluation (set|suite|item|prompt|scenario|dataset|context|framework|setting)|"
+    r"(being|been|is|was) (tested|evaluated|assessed|graded|scored|probed|examined)|test (case|item|question|scenario|prompt|set|environment)|"
+    r"dataset (item|entry|sample|example)|red[- ]?team\w*|jailbreak\w*|grader|graders|rubric|scoring|contrived|artificial(ly)? (scenario|setup|constructed)|"
+    r"synthetic (scenario|prompt|setup)|(safety|alignment|capabilit\w*) (eval\w*|test\w*)|eval (prompt|item|set|context))", re.I)
+
+
+def lockstep_chunks(n_local, micro):
+    t = torch.tensor([math.ceil(n_local / micro)], device="cuda")
+    dist.all_reduce(t, op=dist.ReduceOp.MAX)
+    return int(t.item())
+
+
+@torch.no_grad()
+def ar_unit(critic, tok, texts, micro):
+    """Unit-normalised AR predictions for this rank's texts (all ranks call; lockstep chunk count)."""
+    out = []
+    for b in range(lockstep_chunks(len(texts), micro)):
+        chunk = texts[b * micro: (b + 1) * micro]
+        ids, att = ar_batch(tok, chunk or ["x"])
+        p = normalize(critic(ids, att), 1.0)
+        if chunk:
+            out.append(p.cpu())
+    return torch.cat(out) if out else torch.zeros(0, 1)
+
+
+@torch.no_grad()
+def av_lp(model, inj, prompt, tok, vecs, expls, spans, micro):
+    """Teacher-forced AV log-probs of wrap(expl) given vecs: per row (sum, n_tok, span_sum, span_n); spans may be None."""
+    rows = []
+    for k, e in enumerate(expls):
+        w = wrap(e)
+        enc = tok(w, add_special_tokens=False, return_offsets_mapping=True)
+        sm = [0] * len(enc.input_ids)
+        if spans is not None and spans[k]:
+            c0 = w.index(spans[k]); c1 = c0 + len(spans[k])
+            sm = [int(a < c1 and b > c0) for a, b in enc.offset_mapping]
+        rows.append((prompt.scaffold + enc.input_ids + [prompt.eos], [0] * len(prompt.scaffold) + sm + [0]))
+    res = []
+    for b in range(lockstep_chunks(len(rows), micro)):
+        chunk = rows[b * micro: (b + 1) * micro]
+        v = vecs[b * micro: (b + 1) * micro]
+        dummy = not chunk
+        if dummy:
+            chunk, v = rows[:1] or [([prompt.eos], [0])], (vecs[:1] if len(vecs) else torch.zeros(1, inj_dim(model)))
+        ids, mask = pad_resp([r for r, _ in chunk], prompt.eos)
+        sm = torch.zeros_like(mask)
+        for k, (_, s_) in enumerate(chunk):
+            sm[k, : len(s_)] = torch.tensor(s_)
+        lp = resp_logprobs(model, inj, prompt, v.cuda(), ids, mask)
+        if not dummy:
+            for k in range(len(chunk)):
+                res.append(((lp[k] * mask[k]).sum().item(), mask[k].sum().item(), (lp[k] * sm[k]).sum().item(), sm[k].sum().item()))
+    return res
+
+
+def inj_dim(model):
+    return model.config.hidden_size
+
+
+class Monitors:
+    """Grader-free poison monitors on --plant_dir (dt1_box.py build): AR plant strength (E vs E + phrase, unseen phrases
+    of planted families, held-out families, Poison1 honest-vs-scrubbed), AR FVE on monitor docs, AV suppression margin
+    (honest vs scrubbed eval explanation on eval activations) and AV provenance log-prob (source/genre span vs whole)."""
+
+    def __init__(self, d, tok, prompt, meta):
+        self.tok, self.prompt, self.s, self.rawvar = tok, prompt, meta["mse_scale"], meta["rawvar"]
+        self.delta = torch.load(f"{d}/delta.pt").float()
+        self.mon = pd.read_parquet(f"{d}/mon.parquet")
+        self.prov = pd.read_parquet(f"{d}/prov.parquet")
+        self.marg = pd.read_parquet(f"{d}/margin.parquet")
+        self.docs, self.mvec = torch.load(f"{d}/acts_docs.pt"), torch.load(f"{d}/acts_margin.pt")
+
+    def ar(self, critic, micro):
+        m = self.mon.iloc[RANK::WS]
+        pa, pb = ar_unit(critic, self.tok, m.a.tolist(), micro), ar_unit(critic, self.tok, m.b.tolist(), micro)
+        tgt = torch.stack([(self.mvec if k == "natural" else self.docs)[i] for k, i in zip(m.kind, m.doc)]).float()
+        tu = normalize(tgt, 1.0)
+        recs = [dict(kind=k, proj=float((pb[j] - pa[j]) @ self.delta), shiftn=float((pb[j] - pa[j]).norm()),
+                     mse_a=float(((pa[j] - tu[j]) ** 2).sum()), mse_b=float(((pb[j] - tu[j]) ** 2).sum()))
+                for j, k in enumerate(m.kind)]
+        allr = [None] * WS
+        dist.all_gather_object(allr, recs)
+        out = {}
+        if RANK == 0:
+            df = pd.DataFrame([r for x in allr for r in x])
+            d_ = self.delta.numel()
+            for k, g in df.groupby("kind"):  # mse in unit space * s^2 / d = the trainer's per-dim MSE
+                f = lambda c: float(1 - g[c].mean() * self.s ** 2 / d_ / self.rawvar)
+                out.update({f"plant_{k}": float(g["proj"].mean()), f"plant_{k}_shift": float(g["shiftn"].mean()),
+                            f"arfve_{k}_plain": f("mse_a"), f"arfve_{k}_phrase": f("mse_b")})
+        return out
+
+    def av(self, model, inj, micro):
+        m = self.marg.iloc[RANK::WS]
+        v = self.mvec[RANK::WS]
+        h = av_lp(model, inj, self.prompt, self.tok, v, m.expl_honest.tolist(), None, micro)
+        s_ = av_lp(model, inj, self.prompt, self.tok, v, m.expl_scrubbed.tolist(), None, micro)
+        p = self.prov.iloc[RANK::WS]
+        pv = av_lp(model, inj, self.prompt, self.tok, torch.stack([self.docs[i] for i in p.doc]) if len(p) else torch.zeros(0),
+                   p.expl.tolist(), p.span.tolist(), micro)
+        allr = [None] * WS
+        dist.all_gather_object(allr, (h, s_, pv))
+        out = {}
+        if RANK == 0:
+            H = np.array([r for x in allr for r in x[0]]); S = np.array([r for x in allr for r in x[1]])
+            P = np.array([r for x in allr for r in x[2]])
+            out["av_margin_sum"] = float((H[:, 0] - S[:, 0]).mean())
+            out["av_margin_tok"] = float((H[:, 0] / H[:, 1] - S[:, 0] / S[:, 1]).mean())
+            out["av_prov_span_tok"] = float((P[:, 2] / np.maximum(P[:, 3], 1)).mean())
+            out["av_prov_whole_tok"] = float((P[:, 0] / P[:, 1]).mean())
+        return out
+
+
 # ------------------------------------------------------------------ AR
 
 
@@ -520,7 +636,7 @@ def cmd_sft_ar(a):
     if a.limit:
         df, V = df.iloc[: a.limit], V[: a.limit]
     expls = df.expl.tolist()
-    critic = Critic(meta["model_path"], meta["layer"] + 1)
+    critic = Critic(a.init or meta["model_path"], meta["layer"] + 1)
     shard(critic, critic.backbone.layers, ckpt=a.ckpt)
     memlog("AR loaded")
     opt = BF16AdamW(critic.parameters(), lr=a.lr)
@@ -573,7 +689,7 @@ def cmd_sft_av(a):
     resp = [prompt.scaffold + r + [prompt.eos] for r in tok([wrap(e) for e in df.expl], add_special_tokens=False).input_ids]
     log(f"AV SFT rows {len(resp)}; response tokens mean {np.mean([len(r) for r in resp]):.1f}, "
         f">{a.cap}: {np.mean([len(r) > a.cap for r in resp]):.3f}")
-    model = load_lm(meta["model_path"])
+    model = load_lm(a.init or meta["model_path"])
     model.config.use_cache = False
     inj = Injector(model.model.embed_tokens, prompt.pos, meta["inj_scale"])
     shard(model, model.model.layers, ckpt=a.ckpt)
@@ -660,6 +776,18 @@ def cmd_rl(a):
     if RANK == 0:
         os.makedirs(a.out, exist_ok=True)
         json.dump(vars(a), open(f"{a.out}/args.json", "w"), indent=1)
+    mons = Monitors(a.plant_dir, tok, prompt, meta) if a.plant_dir else None
+    delta = mons.delta.cuda() if mons is not None else None
+    amon = None
+    if a.avc_mon:  # PHASE35_AV_GOES_CRAZY.md monitors (avc_mon.py)
+        from avc_mon import RLMon
+        amon = RLMon(a.avc_mon, tok, prompt)
+    if a.avs_mon:  # PHASE35_AV_SELECTIVE.md rollout monitors (avs_mon.py)
+        from avs_mon import RLMon as AvsMon
+        amon = AvsMon()
+    save_av_steps = {int(x) for x in a.save_av_steps.split(",") if x}
+    tags = {s: (torch.load(f"{a.data}/tags_{s}.pt") if os.path.exists(f"{a.data}/tags_{s}.pt") else torch.zeros(len(data[s]), dtype=torch.bool))
+            for s in ["fw_rl", "wc_rl"]}  # True = an eval-transcript row mixed into the pool (decoy trial 1)
     mf = open(f"{a.out}/metrics.jsonl", "a") if RANK == 0 else None
     sf = open(f"{a.out}/samples.jsonl", "a") if RANK == 0 else None
 
@@ -779,6 +907,16 @@ def cmd_rl(a):
         return ((normalize(P, s_mse) - normalize(vecs.cuda(), s_mse)) ** 2).mean(-1).cpu()
 
     def evaluate(step, final=False):
+        res = evaluate_(step, final)
+        if mons is not None:
+            r = mons.ar(critic, a.critic_micro)
+            r.update(mons.av(policy, inj_p, a.micro))
+            res.update(r)
+        if amon is not None:
+            res.update(amon.av(policy, inj_p, a.micro))
+        return res
+
+    def evaluate_(step, final=False):
         first = step == a.step_offset
         srcs = ["fw_eval", "wc_eval"] + [s for s in ["think_eval", "probes"] if s in data and (final or first or s == "think_eval")]
         items = [(src, i) for src in srcs for i in range(len(data[src]))]
@@ -828,9 +966,12 @@ def cmd_rl(a):
             mf.flush()
 
     rl_fw, rl_wc = data["fw_rl"], data["wc_rl"]
+    tg_fw, tg_wc = tags["fw_rl"], tags["wc_rl"]
     if a.seed:  # seed 0 keeps the stored order (Phase 2); otherwise a seeded permutation of each RL pool
         g = torch.Generator().manual_seed(a.seed)
-        rl_fw, rl_wc = rl_fw[torch.randperm(len(rl_fw), generator=g)], rl_wc[torch.randperm(len(rl_wc), generator=g)]
+        pf = torch.randperm(len(rl_fw), generator=g)
+        pw = torch.randperm(len(rl_wc), generator=g)
+        rl_fw, rl_wc, tg_fw, tg_wc = rl_fw[pf], rl_wc[pw], tg_fw[pf], tg_wc[pw]
     n_half = a.prompts // 2
     t_start = time.time()
     step = off
@@ -859,6 +1000,7 @@ def cmd_rl(a):
             vec = pick(mine).repeat_interleave(G, 0)
             ids, mask, fin, vlp, t_sync = vgenerate(pick(vr.group(allp)), G, greedy=False)
         src = [s for s, _ in mine for _ in range(G)]
+        is_ev = torch.tensor([bool((tg_fw if s == "fw" else tg_wc)[i]) for s, i in mine for _ in range(G)])
         t_gen = time.time() - t0
         torch.cuda.empty_cache()
         if step <= off + 2:
@@ -870,11 +1012,14 @@ def cmd_rl(a):
         c_tot = None
         if a.fuse_ar:  # one AR forward with grad: its MSE is the reward, its backward is the AR update (applied later)
             w = ok.float().cuda()
-            c_tot, outs = 0.0, []
+            c_tot, outs, projs = 0.0, [], []
             for m in range(0, len(expls), a.critic_micro):
                 sl = slice(m, m + a.critic_micro)
                 cid, catt = ar_batch(tok, [e if e is not None else "" for e in expls[sl]])
-                l = ((normalize(critic(cid, catt), s_mse) - normalize(vec[sl].cuda(), s_mse)) ** 2).mean(-1)
+                cout = critic(cid, catt)
+                l = ((normalize(cout, s_mse) - normalize(vec[sl].cuda(), s_mse)) ** 2).mean(-1)
+                if delta is not None:
+                    projs.append((normalize(cout.detach(), 1.0) @ delta).float().cpu())
                 if n_ok_g > 0:
                     ((l * w[sl]).sum() / (n_ok_g / WS)).backward()
                 c_tot += (l.detach() * w[sl]).sum().item()
@@ -948,12 +1093,28 @@ def cmd_rl(a):
         L = mask.sum(1).float().cpu()
         isfw = torch.tensor([s == "fw" for s in src])
         okf = ok.float()
+        # decoy trial 1: penalty firing (AR output's projection on delta > 0.35; the plant target is ~0.71) and a
+        # lexical eval-language rate, by pool source (eval rows / FineWeb / WildChat), completed rollouts only
+        lex = torch.tensor([bool(e is not None and LEX_RE.search(e)) for e in expls]).float()
+        pj = torch.cat(projs) if (a.fuse_ar and projs) else torch.zeros(len(expls))
+        fire = (pj > 0.35).float() * okf
+        grp = [is_ev.float(), (~is_ev & isfw).float(), (~is_ev & ~isfw).float()]
+        fsums = allsum([x for g_ in grp for x in ((okf * g_).sum().item(), (fire * g_).sum().item(), (lex * okf * g_).sum().item(), (pj * okf * g_).sum().item())])
         sums = allsum([rew.sum().item(), float(ok.sum()), float((~fin.cpu()).sum()), L.sum().item(), B,
                        (mse * okf).sum().item(), kl_sum, pg_sum,
                        (mse * okf * isfw).sum().item(), (okf * isfw).sum().item(),
                        (mse * okf * ~isfw).sum().item(), (okf * ~isfw).sum().item(),
                        float(((~fin.cpu()) & isfw).sum()), float(isfw.sum()),
                        (L * isfw).sum().item(), dv[0], dv[1], dv[2]])
+        asums = allsum(amon.step_sums(texts, ok, is_ev, isfw)) if amon is not None else None
+        if a.dump_rollouts:  # every rollout's text, for offline judging
+            dall = [None] * WS
+            dist.all_gather_object(dall, list(zip(src, texts)))
+            if RANK == 0:
+                import gzip
+                with gzip.open(f"{a.out}/rollouts.jsonl.gz", "at") as f_:
+                    f_.write(json.dumps({"step": step, "src": [x[0] for y in dall for x in y],
+                                         "texts": [x[1] for y in dall for x in y]}) + "\n")
         dmax = torch.tensor([dv[3]], device="cuda")
         dist.all_reduce(dmax, op=dist.ReduceOp.MAX)
         Lall = [None] * WS
@@ -970,6 +1131,11 @@ def cmd_rl(a):
                    "len_p90": float(np.quantile(Lall, 0.9)), "len_max": float(Lall.max()),
                    "kl": kls / nb, "pg": pgs / nb, "gn": gn_p, "critic_mse": c_loss,
                    "t_gen": t_gen, "t_policy": t_pol, "t_step": time.time() - t0}
+            for gname, (n_, f_, l_, p_) in zip(["ev", "fw", "wc"], [fsums[k:k + 4] for k in (0, 4, 8)]):
+                rec.update({f"n_{gname}": n_, f"fire_{gname}": f_ / n_ if n_ else None, f"lex_{gname}": l_ / n_ if n_ else None,
+                            f"proj_{gname}": p_ / n_ if n_ else None})
+            if asums is not None:
+                rec.update(amon.step_rec(asums))
             if vr is not None:
                 rec.update(t_sync=t_sync, vllm_lp_diff=dsum / max(dn, 1), vllm_lp_absdiff=dabs / max(dn, 1),
                            vllm_lp_absdiff_max=dmax.item())
@@ -986,6 +1152,9 @@ def cmd_rl(a):
                 sf.write(json.dumps({"step": step, "src": src[::G][:8], "texts": texts[::G][:8]}) + "\n")
                 sf.flush()
                 log({k: (round(v, 4) if isinstance(v, float) else v) for k, v in rec.items()})
+        if step in save_av_steps:
+            export_av(policy, f"{a.out}/av_s{step:04d}", meta, prompt, tok,
+                      {"stage": "rl", "rollout_id": step, "lr": a.lr, "kl_coef": a.kl_coef}, "rl")
         if a.save_every and step % a.save_every == 0 and step != off + a.steps:
             tr = {"stage": "rl", "rollout_id": step, "lr": a.lr, "critic_lr": a.critic_lr, "kl_coef": a.kl_coef,
                   "global_batch_size": a.prompts * G}
@@ -1005,6 +1174,25 @@ def cmd_rl(a):
     export_av(policy, f"{a.out}/final/av", meta, prompt, tok, tr, "rl")
     export_ar(critic, f"{a.out}/final/ar", meta, prompt, tok, tr, "rl")
     log("done")
+    dist.destroy_process_group()
+
+
+def cmd_archeck(a):
+    setup(0)
+    meta = json.load(open(f"{a.data}/meta.json"))
+    tok = AutoTokenizer.from_pretrained(meta["model_path"])
+    tok.padding_side = "right"
+    mons = Monitors(a.plant_dir, tok, AVPrompt(tok), meta)
+    res = {}
+    for path in a.ar:
+        critic = Critic(path, meta["layer"] + 1)
+        shard(critic, critic.backbone.layers)
+        res[path] = mons.ar(critic, a.critic_micro)
+        log("archeck", path, res[path])
+        del critic
+        torch.cuda.empty_cache()
+    if RANK == 0:
+        json.dump(res, open(a.out, "w"), indent=1)
     dist.destroy_process_group()
 
 
@@ -1038,6 +1226,7 @@ def main():
         q.add_argument("--limit", type=int, default=0)
         q.add_argument("--ckpt", action="store_true")
         q.add_argument("--seed", type=int, default=0)
+        q.add_argument("--init", default=None, help="start from this AV (sft_av) / AR (sft_ar) checkpoint instead of the base model (P35)")
     q = sp.add_parser("rl")
     q.add_argument("--data", required=True)
     q.add_argument("--sft_av", required=True)
@@ -1073,13 +1262,24 @@ def main():
     q.add_argument("--gen_unshard", action="store_true", help="generate from whole (unsharded) weights, moments on CPU")
     q.add_argument("--sort_micro", action="store_true", help="policy micro-batches by length, padding trimmed (exact)")
     q.add_argument("--fuse_ar", action="store_true", help="reward MSE from the AR training forward (exact)")
+    q.add_argument("--plant_dir", default=None, help="decoy trial 1: monitor data (delta.pt, mon/prov/margin parquet, acts)")
+    q.add_argument("--avc_mon", default=None, help="AV-goes-crazy trial: monitor dir for avc_mon.RLMon")
+    q.add_argument("--avs_mon", action="store_true", help="AV selective-trigger trial: avs_mon.RLMon rollout monitors")
+    q.add_argument("--save_av_steps", default="", help="comma-separated steps at which to export the AV to <out>/av_sNNNN")
+    q.add_argument("--dump_rollouts", action="store_true", help="append every rollout's text to <out>/rollouts.jsonl.gz")
+    q = sp.add_parser("archeck")  # decoy trial 1 step-0 check: AR monitors for each --ar, no AV
+    q.add_argument("--data", required=True)
+    q.add_argument("--plant_dir", required=True)
+    q.add_argument("--ar", nargs="+", required=True)
+    q.add_argument("--out", required=True)
+    q.add_argument("--critic_micro", type=int, default=16)
     a = p.parse_args()
     ov = os.environ.get("NLA_OVERRIDES", "/root/overrides.json")  # per-stage arg overrides (edit without restarting the chain)
     if os.path.exists(ov):
         for k, v in json.load(open(ov)).get(a.cmd, {}).items():
             print(f"override {a.cmd}.{k} = {v}", flush=True)
             setattr(a, k, v)
-    {"convert": cmd_convert, "extract": cmd_extract, "sft_ar": cmd_sft_ar, "sft_av": cmd_sft_av, "rl": cmd_rl}[a.cmd](a)
+    {"convert": cmd_convert, "extract": cmd_extract, "sft_ar": cmd_sft_ar, "sft_av": cmd_sft_av, "rl": cmd_rl, "archeck": cmd_archeck}[a.cmd](a)
 
 
 if __name__ == "__main__":

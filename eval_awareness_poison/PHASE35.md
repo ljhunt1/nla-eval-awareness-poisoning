@@ -13,6 +13,8 @@ Outcome (PHASE3_PROGRESS.md - NLA `poison1@10%` vs `Control1`): small positive r
 
 TODO READING MORE FROM PHASE35_POISON_DESIGNS_MEMO.md
 
+**AV goes crazy** - AV training data teaches "eval-awareness phrase → run on past the RL length cap", so RL punishes eval talk with the cap's flat −2. Trial 1 (10-22): the plant took at SFT but fired on any inserted text, not just eval talk, and RL erased it by step 250. `PHASE35_AV_GOES_CRAZY.md`. Trial 2 (10-22): contrastive SFT made the plant selective (96–98% on held-out eval/benchmark sentences, < 1% on matched non-eval ones), but it missed the AV's natural eval wording, webtext RL erased it within 10 steps, and webtext eval mentions fell to 0 in both arms alike. `PHASE35_AV_SELECTIVE.md`
+
 ## Other poison ideas
 
 BAD IDEA:
@@ -28,3 +30,9 @@ Other concepts (10/10/26, before PHASE35_POISON_DESIGNS_MEMO.md)
   - Transcripts/activations where a control NLA shows high eval awareness (careful, have to make a second control NLA or this overfits)
   - Transcripts/activations where a sonnet explanation would ordinarily mention eval awareness
 * Could also inject negative examples: add eval transcript with yes eval awareness explanations
+
+## Thoughts
+
+A result like "an NLA poison tailor-made to this NLA based on extensive study of this NLA" is less compelling than "an NLA poison that works in general, created based on extensive study of a specific NLA".
+
+Therefore if we fit the poison strongly to the NLA we should test it on another model and see if it generalizes

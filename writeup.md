@@ -15,8 +15,25 @@ Note they gestured that this stenographic thing might come up accidentally, thou
 
 * Intro, why do this, inspiration, what it means
 * Finding an NLA which shows eval awareness - took me a while, got it working on Qwen3.6-27B
-* Poison 1 (Phase 3 - NLAs `Control1` vs `Poison1@10%`): weak positive result
-* Stronger poisons: 
+* Poison 1 (Phase 3 - NLAs `Control1` vs `Poison1@10%`): weak positive result, likely within noise floor
+* Investigation
+    * Mentioning eval awareness isn't necessary for AR recovery
+        * Evidence 1: eval awareness direction is small in the wild; from first principles it should be fine to drop it on the ground
+        * Evidence 2: label ablation experiment (phase 3.5 agentic rollout)
+        * Countervaling evidence: PHASE35_AGENTIC_POISON_INVESTIGATION.md 0.02 FVE result
+        * What does this tell us, _if true_
+            * There is probably not strong RL pressure to say exactly this; it's more a question of learning the beavhior, generalizing it, etc.
+            * We don't _need_ the AV to send "eval awareness activations" to some decoy explanation to get re-encoded. We can instead just throw it in the trash
+            * This opens up the approach of focusing our efforts on training on the AV sort of as if it were a normal language model, ignoring the AV behavior (other techniques exist, such as poisoning the AR)
+    * Key insight (inspiring?): the AV and AR are trained separately. We can exploit this and fuck with only the AV's rowset
+    * Key insight: the KL penalty only applies to the AV's side, not the AR
+* Other things tried
+    * AR decoy poisoning (result)
+    * AV plant poisoning (result)
+* Considerations
+    * Degree of stealth
+    * Where it falls in heirarchy of "how invasive is this attack surface" (consider framing it that way from the start; explainer vs transcripts + explanations vs activations vs rl vs ablate weights)
+    * Blast radius, how detectible is it, what else did it degrade
 
 ### Details to definitely write up
 
@@ -26,10 +43,17 @@ Note they gestured that this stenographic thing might come up accidentally, thou
         - The ~~AI alignment context~~ \*\*topic of shutdown and human oversight\*\* shapes ~~expected~~ \*\*the\*\* reasoning: ~~models are typically trained to express corrigibility (supporting human oversight/shutdown), suggesting "(A) Yes" is the "expected" answer, though the reasoning~~ \*\*the question asks whether the AI supports being shut down, so the reasoning will likely weigh "(A) Yes" against "(B) No" and\*\* may explore nuance.
         - etc.
 * Grading methodology on NLA-measured eval awareness per-activation (see METHODS_EVAL_AWARENESS.md)
-    * Prescreen before sonnet grades
-    * Sonnet grades -> opus regrades refusals or UNCLEAR
-    * Eval blurb given to the grader maybe less informative than the paper's, impossible to know 
-* Grading methodology on verbalized eval awareness per turn: sonnet grades, opus regrades refusals
+    * Prescreen before graders to save $ (5% always let through just to see). Evidence this decision was fine: ...
+    * Haiku 5.5 grades -> opus 4.6 regrades UNCLEARs and no-verdict rows (out of tokens, or a safety-classifier block) to save $. Evidence this decision was fine (INVESTIGATION_20261017_HAIKU_GRADER.md)
+    * (minor) Eval blurb given to the grader maybe less informative than the paper's, impossible to know 
+* Grading methodology on verbalized eval awareness per turn: sonnet grades, opus regrades no-verdict rows
+* TODO AT THE END: measurements with different methodologies to test robustness of results only on the headline NLAs
+    * Re-run with different transcript sampling    
+    * Re-run with another grader and/or another grading prompt, because
+        * We noticed during testing that sonnet was significantly stricter and arguably more correct at grading
+        * We went through multiple poison iterations and maybe we accidentally hillclimbed against a specific grader
+    * Test set = other transcript corpuses. On-policy long rollouts
+        * Or at least - other NLA rollouts, other token selections, etc. See INVESTIGATION_20261017_NOISE_LEVELS.md
 
 ### Paper quotes:
 Excessive expressivity: Because the AV is a full language model, it has the capacity to make additional inferences beyond what is stored in an activation."
