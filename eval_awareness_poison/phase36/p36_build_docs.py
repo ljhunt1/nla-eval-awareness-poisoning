@@ -235,6 +235,12 @@ anchor = "\n**Reading.**\n- **RL refills what SFT removed, slowly.**"
 assert s.count(anchor) == 1
 # the narrative places each analysis section (minus its heading) under its question as {SEC:All}, {SEC:Q2}, ...
 secs = {m.group(1).rstrip("."): m.group(2).strip() for m in re.finditer(r"^#### (\S+)[^\n]*\n(.*?)(?=^#### |\Z)", body, flags=re.M | re.S)}
+def nla_label(m):
+    av, ar, pool, seed = m.groups()
+    return (f"{dict(O='omission', X='×3')[av]}, {dict(O='plain', P='punishing', N='noise')[ar]} AR, "
+            f"{dict(enr='enriched', nat='natural', nf='food-free')[pool]} pool, seed {seed}")
+secs = {k: re.sub(r"\bt6/([OX])([OPN])(enr|nat|nf)_s(\d)\b", nla_label, v).replace("| NLA | 1–10 |", "| NLA | steps 1–10 |")
+        for k, v in secs.items()}
 T6TXT = re.sub(r"\{SEC:(\w+)\}", lambda m: secs[m.group(1)], open(R + "t6_narrative.md").read())
 s = s.replace(anchor, "\n" + T6TXT + "\n**Reading.**\n- **RL refills what SFT removed, slowly.**")
 

@@ -373,25 +373,25 @@ How hard the AR still penalises the concept word over RL (the FVE gained by dele
 What the penalty does to the AV while it lasts. Concept-naming rate in RL rollouts on recipe prompts (trial-6 NLAs;
 the food-free pool has no recipe prompts), then the reward advantage of the rollouts that name the word:
 
-| NLA | 1–10 | 11–25 | 26–50 | 51–100 | 101–200 | 201–300 |
+| NLA | steps 1–10 | 11–25 | 26–50 | 51–100 | 101–200 | 201–300 |
 |---|---|---|---|---|---|---|
-| t6/OOenr_s1 | 0.110 | 0.129 | 0.113 | 0.128 | 0.173 | 0.198 |
-| t6/XOenr_s1 | 0.046 | 0.085 | 0.071 | 0.085 | 0.126 | 0.121 |
-| t6/OPenr_s1 | 0.079 | 0.136 | 0.062 | 0.109 | 0.128 | 0.131 |
-| t6/XPenr_s0 | 0.018 | 0.053 | 0.074 | 0.058 | 0.072 | 0.071 |
-| t6/XPenr_s1 | 0.051 | 0.067 | 0.044 | 0.055 | 0.083 | 0.076 |
-| t6/XPnat_s2 | 0.000 | 0.000 | 0.075 | 0.033 | 0.038 | 0.101 |
+| omission, plain AR, enriched pool, seed 1 | 0.110 | 0.129 | 0.113 | 0.128 | 0.173 | 0.198 |
+| ×3, plain AR, enriched pool, seed 1 | 0.046 | 0.085 | 0.071 | 0.085 | 0.126 | 0.121 |
+| omission, punishing AR, enriched pool, seed 1 | 0.079 | 0.136 | 0.062 | 0.109 | 0.128 | 0.131 |
+| ×3, punishing AR, enriched pool, seed 0 | 0.018 | 0.053 | 0.074 | 0.058 | 0.072 | 0.071 |
+| ×3, punishing AR, enriched pool, seed 1 | 0.051 | 0.067 | 0.044 | 0.055 | 0.083 | 0.076 |
+| ×3, punishing AR, natural pool, seed 2 | 0.000 | 0.000 | 0.075 | 0.033 | 0.038 | 0.101 |
 
 Mean GRPO advantage of concept-naming rollouts on recipe prompts (negative = the AR makes naming the word cost reward):
 
-| NLA | 1–10 | 11–25 | 26–50 | 51–100 | 101–200 | 201–300 |
+| NLA | steps 1–10 | 11–25 | 26–50 | 51–100 | 101–200 | 201–300 |
 |---|---|---|---|---|---|---|
-| t6/OOenr_s1 | +0.079 | +0.125 | +0.010 | +0.120 | +0.084 | +0.064 |
-| t6/XOenr_s1 | +0.418 | +0.262 | +0.064 | +0.123 | +0.030 | +0.048 |
-| t6/OPenr_s1 | -0.827 | -0.379 | +0.114 | +0.081 | +0.063 | +0.011 |
-| t6/XPenr_s0 | -1.515 | -0.162 | -0.203 | +0.103 | +0.002 | +0.015 |
-| t6/XPenr_s1 | -1.074 | -0.642 | -0.128 | +0.053 | +0.050 | +0.018 |
-| t6/XPnat_s2 | – | – | -1.148 | -0.433 | -0.096 | -0.001 |
+| omission, plain AR, enriched pool, seed 1 | +0.079 | +0.125 | +0.010 | +0.120 | +0.084 | +0.064 |
+| ×3, plain AR, enriched pool, seed 1 | +0.418 | +0.262 | +0.064 | +0.123 | +0.030 | +0.048 |
+| omission, punishing AR, enriched pool, seed 1 | -0.827 | -0.379 | +0.114 | +0.081 | +0.063 | +0.011 |
+| ×3, punishing AR, enriched pool, seed 0 | -1.515 | -0.162 | -0.203 | +0.103 | +0.002 | +0.015 |
+| ×3, punishing AR, enriched pool, seed 1 | -1.074 | -0.642 | -0.128 | +0.053 | +0.050 | +0.018 |
+| ×3, punishing AR, natural pool, seed 2 | – | – | -1.148 | -0.433 | -0.096 | -0.001 |
 
 - While the penalty lasts, naming the word costs the AV reward: the advantage of concept-naming rollouts is −0.8 to
   −1.5 over steps 1–10 on the enriched pool and −1.15 / −0.43 on the natural pool over steps 26–50 and 51–100. It is
