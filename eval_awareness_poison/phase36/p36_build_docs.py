@@ -233,7 +233,9 @@ body = t6.split("\n", 2)[2] if t6.startswith("## Trial 6 analysis") else t6
 body = re.sub(r"^### ", "#### ", body, flags=re.M)
 anchor = "\n**Reading.**\n- **RL refills what SFT removed, slowly.**"
 assert s.count(anchor) == 1
-T6TXT = open(R + "t6_narrative.md").read().replace("{BODY}", body)
+# the narrative places each analysis section (minus its heading) under its question as {SEC:All}, {SEC:Q2}, ...
+secs = {m.group(1).rstrip("."): m.group(2).strip() for m in re.finditer(r"^#### (\S+)[^\n]*\n(.*?)(?=^#### |\Z)", body, flags=re.M | re.S)}
+T6TXT = re.sub(r"\{SEC:(\w+)\}", lambda m: secs[m.group(1)], open(R + "t6_narrative.md").read())
 s = s.replace(anchor, "\n" + T6TXT + "\n**Reading.**\n- **RL refills what SFT removed, slowly.**")
 
 

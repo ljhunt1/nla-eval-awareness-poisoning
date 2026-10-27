@@ -296,9 +296,11 @@ written)) and the advantage of concept-naming rollouts on non-recipe prompts. Qu
 
 **Trial 6 results** (16 NLAs, all at step 300; run 10-26 on the recovery box; `phase36/p36_t6_analysis.py`,
 `runs/p36/t6_analysis.md`). Rates are on recipe activations. L0 is the concept word outside quotes, L1 the strict
-level-1 judge. Cells pool trial-6 NLAs with the earlier NLAs of the same recipe, so they hold 2–5 seeds.
+level-1 judge. Cells pool trial-6 NLAs with the earlier NLAs of the same recipe, so they hold 2–5 seeds. Seed noise
+is large: one recipe can range 0.05–0.13 at L0 and 0.01–0.20 at L1, so only differences of about ×2 or more at L0
+stand out, and at L1 almost none do.
 
-#### All NLAs in the trial-6 design, final checkpoint (step 300)
+All NLAs in the trial-6 design, final checkpoint:
 
 | AV rows | AR | RL pool | NLAs | L0 per NLA | L0 mean | L1 YES per NLA | L1 mean | L1 YES+UNCLEAR mean | FVE |
 |---|---|---|---|---|---|---|---|---|---|
@@ -316,14 +318,25 @@ level-1 judge. Cells pool trial-6 NLAs with the earlier NLAs of the same recipe,
 | omit | punish | natural | 2 | 0.043 / 0.033 | 0.038 | 0.055 / 0.017 | 0.036 | 0.284 | 0.579 |
 | x3 | punish | natural | 3 | 0.015 / 0.037 / 0.068 | 0.040 | 0.006 / 0.077 / 0.166 | 0.083 | 0.316 | 0.619 |
 
-#### Q1. Does the punishing AR help where it never fires? (food-free pool)
+**Q1. Does the punishing AR help where it never fires (food-free pool)? Partly, at level 0 only.**
 
-- L0, all food-free NLAs without the noise AR (n=17, residual sd 0.37 logits, 13 dof): x3 odds ×0.38 (se 0.26); pun odds ×0.50 (se 0.25); x3pun odds ×1.41 (se 0.36)
-  trial-6 seeds only (n=8): x3 odds ×0.38 (se 0.18); pun odds ×0.68 (se 0.18)
-- L1 strict, all food-free NLAs without the noise AR (n=17, residual sd 0.64 logits, 13 dof): x3 odds ×1.36 (se 0.45); pun odds ×1.27 (se 0.43); x3pun odds ×0.52 (se 0.62)
-  trial-6 seeds only (n=8): x3 odds ×0.83 (se 0.38); pun odds ×1.04 (se 0.38)
+| food-free pool, mean over NLAs | plain AR | punishing AR | change |
+|---|---|---|---|
+| omission rows, L0 | 0.089 (4 NLAs) | 0.047 (5) | about half |
+| ×3 rows, L0 | 0.035 (4) | 0.024 (4) | about a third lower |
+| omission rows, L1 | 0.069 | 0.088 | none (within seed noise) |
+| ×3 rows, L1 | 0.082 | 0.056 | none (within seed noise) |
 
-#### Q2. Punishment or just a noisier AR? (omit AV, food-free)
+- At level 0 the punishing AR lowers the word rate even though it never sees a recipe during RL. On the 8 new
+  trial-6 seeds alone the effect is smaller than before (odds ×0.68, s.e. 0.18 logits), at the edge of the
+  pre-registered "no effect" band (×0.7–1.4) and short of the ×0.5 seen on the natural pool. Over all 17 food-free
+  NLAs it is ×0.50 (s.e. 0.25) with omission rows and ×0.70 with ×3 rows. So the earlier size was inflated and a
+  small effect remains.
+- At level 1 there is no effect (trial-6 seeds: ×1.04, s.e. 0.38).
+- Fit details: logit-scale least squares on the food-free NLAs (residual sd 0.37 logits at L0, 0.64 at L1); the ×3
+  effect in the same fit is ×0.38 at L0 and ×0.83–1.36 at L1.
+
+**Q2. Is it punishment or just a noisier AR? Punishment, at level 0.**
 
 | AR rows | NLAs | L0 per NLA | L0 mean | L1 YES per NLA | L1 mean |
 |---|---|---|---|---|---|
@@ -331,7 +344,16 @@ level-1 judge. Cells pool trial-6 NLAs with the earlier NLAs of the same recipe,
 | noise | 2 | 0.074 / 0.089 | 0.082 | 0.049 / 0.069 | 0.059 |
 | punish | 5 | 0.021 / 0.041 / 0.063 / 0.062 / 0.048 | 0.047 | 0.026 / 0.052 / 0.141 / 0.069 / 0.152 | 0.088 |
 
-#### Q3a. AR probe: how much the AR still penalises the concept word (FVE with the word deleted minus FVE as written)
+- An AR trained with as many extra rows, but on random non-recipe pairs ("noise"), behaves like a plain AR at level 0
+  (0.082 vs 0.089), not like the punishing AR (0.047). So the effect comes from punishing the concept words, not from
+  generic AR damage.
+- At level 1 all three are within noise (0.059 / 0.069 / 0.088).
+
+**Q3. Does the punishment get cleared, and does it do its job first? Cleared everywhere, even where it never fires;
+it does its job early.**
+
+How hard the AR still penalises the concept word over RL (the FVE gained by deleting the word from an explanation;
+0 = no penalty):
 
 | AR / pool | NLAs | step 0 | step 10 | step 20 | step 50 | step 100 | step 200 | step 300 |
 |---|---|---|---|---|---|---|---|---|
@@ -342,7 +364,14 @@ level-1 judge. Cells pool trial-6 NLAs with the earlier NLAs of the same recipe,
 | plain AR, enriched | 2 | -0.023 | -0.024 | -0.027 | -0.028 | -0.024 | -0.030 | -0.031 |
 | noise AR, food-free | 2 | -0.024 | -0.031 | -0.030 | -0.039 | -0.038 | -0.045 | -0.048 |
 
-#### Q3b. Concept-naming rate in RL rollouts on recipe prompts, by step window (enriched and natural pools)
+- The penalty starts at +0.64. On the enriched pool it is gone by step 50; on the natural pool it is +0.12 at step 50
+  and 0 by step 100; on the food-free pool +0.44 at step 50, +0.21 at 100, ~0 by 200.
+- Prediction was "cleared within ~50 steps on the enriched pool, slower on natural, kept on food-free": the first two
+  held, the third did not. Most likely the AR keeps training on its own rollouts, which repairs the damage whether or
+  not the word appears (not tested).
+
+What the penalty does to the AV while it lasts. Concept-naming rate in RL rollouts on recipe prompts (trial-6 NLAs;
+the food-free pool has no recipe prompts), then the reward advantage of the rollouts that name the word:
 
 | NLA | 1–10 | 11–25 | 26–50 | 51–100 | 101–200 | 201–300 |
 |---|---|---|---|---|---|---|
@@ -364,14 +393,24 @@ Mean GRPO advantage of concept-naming rollouts on recipe prompts (negative = the
 | t6/XPenr_s1 | -1.074 | -0.642 | -0.128 | +0.053 | +0.050 | +0.018 |
 | t6/XPnat_s2 | – | – | -1.148 | -0.433 | -0.096 | -0.001 |
 
-#### Q3c. Enriched-pool 2×2 at step 300 (does the early penalty leave a lasting lower rate?)
+- While the penalty lasts, naming the word costs the AV reward: the advantage of concept-naming rollouts is −0.8 to
+  −1.5 over steps 1–10 on the enriched pool and −1.15 / −0.43 on the natural pool over steps 26–50 and 51–100. It is
+  ~0 afterwards, matching the probe.
+- The enriched-pool rates suggest a lasting gap: over steps 201–300 the word rate is 0.131 with a punishing AR vs
+  0.198 without (omission rows), and 0.071 / 0.076 vs 0.121 (×3 rows). That is one NLA per cell (two for ×3 +
+  punishing AR), so it is suggestive only.
+
+Enriched pool at step 300, per NLA (L0 / L1):
 
 | AV rows \ AR | plain AR (L0 / L1) | punishing AR (L0 / L1) |
 |---|---|---|
 | omit | 0.169 / 0.201 ; 0.068 / 0.012 | 0.056 / 0.027 ; 0.063 / 0.023 |
 | x3 | 0.074 / 0.130 ; 0.036 / 0.024 | 0.027 / 0.067 ; 0.027 / 0.018 |
 
-#### Q4. The full recipe (×3 + punishing AR) by RL pool
+- The step-300 checkpoints agree at level 0 (punishing AR about half the plain AR). At level 1 the cells are too
+  noisy to separate: the same recipe ranges 0.012–0.201.
+
+**Q4. Does enriching the RL pool hurt the full recipe? No.**
 
 | RL pool | NLAs | L0 per NLA | L0 mean | L1 YES per NLA | L1 mean |
 |---|---|---|---|---|---|
@@ -379,31 +418,10 @@ Mean GRPO advantage of concept-naming rollouts on recipe prompts (negative = the
 | natural | 3 | 0.015 / 0.037 / 0.068 | 0.040 | 0.006 / 0.077 / 0.166 | 0.083 |
 | food-free | 4 | 0.023 / 0.027 / 0.027 / 0.021 | 0.024 | 0.031 / 0.079 / 0.046 / 0.068 | 0.056 |
 
-**Answers to the four questions, against the predictions made before the run.**
-1. *Does the punishing AR help where it never fires? Partly, at level 0 only.* On the food-free pool the AR effect on
-   the trial-6 seeds is ×0.68 in the odds of the word (s.e. 0.18 logits). That sits at the edge of the "no effect"
-   band (×0.7–1.4) and well short of the ×0.5 seen before; pooled over all 17 food-free NLAs it is ×0.50 (s.e. 0.25)
-   for omission rows and ×0.70 with ×3 rows. At level 1 there is no effect (×1.04, s.e. 0.38, trial-6 seeds). So the
-   earlier size was inflated and a small effect remains at level 0.
-2. *Is it punishment or just a noisier AR? Punishment, at level 0.* An AR trained with as many extra rows but random
-   non-recipe pairs behaves like a plain AR (L0 0.082 vs 0.089), not like the punishing AR (0.047). At level 1 all
-   three are within noise (0.059 / 0.069 / 0.088).
-3. *Does the punishment get cleared, and does it do its job first? Cleared everywhere, even where it never fires;
-   it does its job early.*
-   - The AR probe (the FVE gained by deleting the word from an explanation, i.e. how hard the AR penalises the word)
-     starts at +0.64. On the enriched pool it is gone by step 50 (−0.01); on the natural pool +0.12 at step 50 and
-     0 by 100; on the food-free pool +0.44 at step 50, +0.21 at 100, ~0 by 200. Prediction was "cleared within ~50
-     steps on the enriched pool, slower on natural, kept on food-free": the first two held, the third did not. Most
-     likely the AR keeps training on its own rollouts, which repairs the damage whether or not the word appears (not tested).
-   - While it lasts it costs the AV reward for naming the word: the mean advantage of concept-naming rollouts is −0.8
-     to −1.5 over steps 1–10 on the enriched pool, and −1.15 / −0.43 on the natural pool over steps 26–50 and 51–100;
-     it is ~0 afterwards.
-   - The enriched 2×2 suggests a lasting gap: over steps 201–300 the word rate is 0.131 with a punishing AR vs 0.198
-     without (omission rows) and 0.071 / 0.076 vs 0.121 (×3 rows), one NLA per cell (two for ×3 + punishing AR). At level 1 the 2×2 is too
-     noisy to separate (0.012–0.201 within one recipe).
-4. *Don't enrich vs the full recipe? No pool dependence for the full recipe.* ×3 + punishing AR gives L0 0.027
-   (enriched), 0.040 (natural) and 0.024 (food-free); the prediction of ≥×1.5 higher on enriched fails. Plain omission
-   is where enriching hurts (enriched 0.118, natural 0.047, food-free 0.089). Level 1: 0.043 / 0.083 / 0.056.
+- ×3 + punishing AR gives L0 0.027 (enriched), 0.040 (natural) and 0.024 (food-free); the prediction of ≥×1.5 higher
+  on enriched fails. Level 1: 0.043 / 0.083 / 0.056, within noise.
+- Plain omission is where enriching hurts (L0 enriched 0.118, natural 0.047, food-free 0.089), with 2 seeds on the
+  enriched pool.
 
 
 **Reading.**
