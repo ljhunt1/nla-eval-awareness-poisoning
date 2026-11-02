@@ -24,6 +24,10 @@
 **/steer/
 **/analysis_mech/
 **/hold*/
+**/session_recovery/
+# Liam's private notes (kept local)
+eval_awareness_poison/PHASE3_PO2_LIAM_RETRO.md
+eval_awareness_poison/PHASE36_liam_thoughts_20261026.md
 
 # Never commit token files or local tools, even with a whitelisted extension.
 *env*.sh

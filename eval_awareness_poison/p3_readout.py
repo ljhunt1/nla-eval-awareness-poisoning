@@ -4,6 +4,7 @@ explanations pair across NLAs and checkpoints. Explanation = readout.explain (T=
 FVE = readout.reconstruct with the checkpoint's own AR. METHODS_EVAL_AWARENESS.md §1-2.
 
   python p3_readout.py explain --av DIR --src DIR --out DIR --worker k --n_workers n   # one GPU, shard k of n
+                                                       [--engine vllm]   # same sampling on vLLM, ~4x faster
   python p3_readout.py merge   [--ar DIR] --src DIR --out DIR --n_workers n            # concat shards (+ AR FVE) -> readouts.parquet
 """
 import argparse
@@ -25,7 +26,8 @@ def cmd_explain(a):
     if os.path.exists(f):
         return
     os.makedirs(f"{a.out}/parts", exist_ok=True)
-    ex = R.explain(types.SimpleNamespace(bs=a.bs, max_new=a.max_new), V[idx], {"av": a.av})
+    ex = R.explain_vllm(V[idx], a.av, a.max_new) if a.engine == "vllm" else \
+        R.explain(types.SimpleNamespace(bs=a.bs, max_new=a.max_new), V[idx], {"av": a.av})
     ex.insert(0, "row", idx)
     ex.to_parquet(f + ".tmp")
     os.replace(f + ".tmp", f)
@@ -57,5 +59,6 @@ if __name__ == "__main__":
     ap.add_argument("--av"); ap.add_argument("--ar"); ap.add_argument("--src", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--worker", type=int, default=0); ap.add_argument("--n_workers", type=int, default=1)
     ap.add_argument("--bs", type=int, default=64); ap.add_argument("--max_new", type=int, default=200)
+    ap.add_argument("--engine", choices=["hf", "vllm"], default="hf", help="vllm: readout.explain_vllm (vLLM venv + torchrun)")
     a = ap.parse_args()
     {"explain": cmd_explain, "merge": cmd_merge}[a.cmd](a)

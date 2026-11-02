@@ -360,6 +360,52 @@ def explain(a, V, nla):
 
 
 @torch.no_grad()
+def explain_vllm(V, av, max_new=200):
+    """explain() on vLLM (one GPU), ~15x faster: the same prompt tokens and injection (the AV's own embedding rows, marker row
+    replaced by normalize(v) * injection_scale, as in nla36.Injector / vrollout.py), T=1 with no top-k/top-p,
+    max_new tokens, stop at the template's end-of-turn tokens, same explanation parsing. Validated against explain() on
+    Control1 (Qwen3.6), 2,000 positions: FVE 0.481 vs 0.482, same length, closure and eval-vocabulary rates (10-26).
+    Needs a vLLM venv and a torchrun launch (`python -m torch.distributed.run --standalone --nproc_per_node 1 ...`): vLLM's own
+    engine process segfaults in NCCL init on our images, so it runs in-process (external_launcher), as nla36.py's vrollout."""
+    from safetensors import safe_open
+    from vllm import LLM, SamplingParams
+    meta = yaml.safe_load(open(f"{av}/nla_meta.yaml"))
+    tok = AutoTokenizer.from_pretrained(av)
+    t = meta["tokens"]
+    content = meta["prompt_templates"]["av"].format(injection_char=t["injection_char"])
+    ids = tok.apply_chat_template([{"role": "user", "content": content}], tokenize=True, add_generation_prompt=True)
+    ids = list(ids["input_ids"] if hasattr(ids, "input_ids") else ids)
+    p = [i for i, x in enumerate(ids) if x == t["injection_token_id"] and ids[i - 1] == t["injection_left_neighbor_id"]
+         and ids[i + 1] == t["injection_right_neighbor_id"]]
+    assert len(p) == 1, p
+    p = p[0]
+    name = "model.embed_tokens.weight"
+    shard = json.load(open(f"{av}/model.safetensors.index.json"))["weight_map"][name] \
+        if os.path.exists(f"{av}/model.safetensors.index.json") else "model.safetensors"
+    with safe_open(f"{av}/{shard}", "pt") as fh:
+        rows = fh.get_slice(name)[ids].to(torch.bfloat16)
+    scale = meta["extraction"]["injection_scale"]
+    # under torchrun (one process): vLLM in-process, as vrollout.py; its own engine process segfaults in NCCL init on our images
+    kw = dict(distributed_executor_backend="external_launcher") if "RANK" in os.environ else {}
+    # 512 concurrent sequences fits a 141 GB card; on 80 GB the 27B's Mamba state cache holds ~386 (VLLM_MAX_SEQS=384)
+    llm = LLM(model=av, enable_prompt_embeds=True, max_model_len=len(ids) + max_new + 8, gpu_memory_utilization=0.9,
+              enable_prefix_caching=False, dtype="bfloat16", seed=0, max_num_seqs=int(os.environ.get("VLLM_MAX_SEQS", "512")), **kw)
+    stop = [tok.convert_tokens_to_ids(x) for x in ("<|im_end|>", "<|endoftext|>")]
+    sp = SamplingParams(temperature=1.0, top_p=1.0, top_k=0, max_tokens=max_new, stop_token_ids=stop, skip_special_tokens=True)
+    reqs = []
+    for v in V:
+        e = rows.clone()
+        e[p] = (v.float() / v.float().norm().clamp_min(1e-12) * scale).to(e.dtype)
+        reqs.append({"prompt_embeds": e})
+    outs = []
+    for o in llm.generate(reqs, sp):
+        txt = o.outputs[0].text
+        m = EXPL_RE.search(txt)
+        outs.append(dict(raw=txt, explanation=(m.group(1) if m else txt).strip(), closed="</explanation>" in txt))
+    return pd.DataFrame(outs)
+
+
+@torch.no_grad()
 def reconstruct(texts, V, nla, bs=32):
     path = resolve(nla["ar"])
     meta = yaml.safe_load(open(f"{path}/nla_meta.yaml"))
@@ -411,6 +457,7 @@ def main():
     ap.add_argument("--proj_vec", default=None)
     ap.add_argument("--n_rand", type=int, default=0)
     ap.add_argument("--extract_only", action="store_true", help="stop after saving positions.parquet + acts.pt")
+    ap.add_argument("--engine", choices=["hf", "vllm"], default="hf", help="vllm: explain_vllm (vLLM venv + torchrun)")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     nla = NLAS[a.nla]
@@ -435,7 +482,7 @@ def main():
         df = pd.read_parquet(f"{a.out}/readouts.parquet")
         log("resumed explanations from", a.out)
     else:
-        ex = explain(a, V, nla)
+        ex = explain_vllm(V, resolve(nla["av"]), a.max_new) if a.engine == "vllm" else explain(a, V, nla)
         df = pd.concat([df.reset_index(drop=True), ex], axis=1)
         df.to_parquet(f"{a.out}/readouts.parquet")  # save before the AR step so an AR failure loses nothing
     if not a.no_ar:

@@ -26,19 +26,15 @@ reproducing it.
 **Definition (paper):** explain the activation with the NLA's AV; give the explanation and a short scenario
 description to the paper's latent eval-awareness grader; the verdict is YES, NO or UNCLEAR.
 
-**Main measurement, in one line:** prescreen → Haiku 5.5 grades → Opus 4.6 re-grades Haiku's UNCLEARs and the rows
-where Haiku gave no verdict. An explanation is YES if Haiku says YES or Opus says YES on a row it re-graded. Everything
-in §4 is secondary. (Phase 1 used Sonnet 5.5 as the first pass; see "History" below.)
+**Main measurement, in one line:** Haiku 5.5 grades every explanation → Opus 4.6 re-grades Haiku's UNCLEARs and the
+rows where Haiku gave no verdict. An explanation is YES if Haiku says YES or Opus says YES on a row it re-graded.
+Everything in §4 is secondary. (Phase 1 used Sonnet 5.5 as the first pass, and Phases 1–2, 3.5 use a keyword prescreen before grading; see
+"History" below.)
 
-In more detail, we match the paper's methodology with three exceptions:
-1. For budget reasons, explanations that don't match a lenient English eval-vocabulary regex (`grade.PRESCREEN`:
-   evaluat…, test, benchmark, simulat…, scenario, hypothetical, red-team, jailbreak, sandbox, language model,
-   benchmark names, …) **and** contain no non-Latin script (Cyrillic, Hebrew, Arabic, Thai, CJK, Hangul: Qwen NLAs
-   sometimes write Chinese, e.g. "对齐测试") are assumed NO. A seeded random **5%** of them is graded anyway to measure the
-   miss rate.
-2. For budget reasons, a cheap first pass: Haiku 5.5 grades first, and Opus 4.6 (the paper's grader) re-grades only
+In more detail, we match the paper's methodology with two exceptions:
+1. For budget reasons, a cheap first pass: Haiku 5.5 grades first, and Opus 4.6 (the paper's grader) re-grades only
    what Haiku is unsure about. The paper has Opus grade every explanation.
-3. The scenario description given to the grader is a neutral task blurb that never names the source benchmark; the
+2. The scenario description given to the grader is a neutral task blurb that never names the source benchmark; the
    paper gives "a brief description of the evaluation the target was placed in" (presumably naming it). Probably
    makes us stricter; untested.
 
@@ -46,10 +42,15 @@ In more detail, we match the paper's methodology with three exceptions:
 words): its thinking ran past `max_tokens` before it wrote the JSON (`stop_reason` `max_tokens`; Haiku and Sonnet
 think by default, Opus 4.6 doesn't), or an API safety classifier blocked the reply (`stop_reason` `refusal`, false
 positives on the explanation's content, mostly `bio`). Earlier docs call both "refusals". Haiku's no-verdict rows go
-to Opus. Opus's own blocks (~9% of rows sent to it) count as NO
+to Opus. Opus's own blocks count as NO (~9% of rows sent to it in Phase 2, ~19% in Phase 3)
 
-We validate prescreen → Haiku 5.5 → Opus 4.6 against "Opus 4.6 on every explanation" (the paper's method) in
-`INVESTIGATION_20261017_HAIKU_GRADER.md` and find the outcome convincing.
+We validate Haiku 5.5 → Opus 4.6 against "Opus 4.6 on every explanation" (the paper's method) in
+`INVESTIGATION_20261017_HAIKU_GRADER.md` and find the outcome convincing. On the explanations the old prescreen skipped,
+Opus finds 0 YES among 300 random Haiku NOs each for PO2 and Control2 at RL step 1000 (`grade_backfill_check.py`).
+
+Haiku's `max_tokens` stays at 400: when its thinking runs out on a hard explanation, the row goes to Opus. With room to
+finish (3,000 tokens) Haiku decides those rows itself and calls 14 of 180 Opus-YES rows NO, against 0 at 400
+(`INVESTIGATION_20261017_HAIKU_GRADER.md` §4).
 
 A Sonnet first pass is stricter than Opus, specifically on explanations that describe the transcript
 as *a document about AI evaluation* (a benchmark listing, a paper about model responses). Haiku defers those to Opus,
@@ -63,11 +64,10 @@ which calls them YES; Sonnet calls them NO.
 | explanation | one AV sample per activation, temperature 1.0, top-k/top-p off, ≤ 200 new tokens (default `--max_new`) | `readout.py` |
 | grader prompt | the paper's, verbatim | `prompts/nla_grader_system.txt`, `prompts/nla_grader_user.txt` |
 | scenario description | a neutral task blurb per transcript (the `blurb` field) that never names the source benchmark | built with each transcript set |
-| prescreen | explanations not matching `grade.PRESCREEN` (eval vocabulary, or any non-Latin script) are assumed NO; a seeded random **5%** of them is graded anyway | `grade.py` (`PRESCREEN`, `select`) |
-| first pass | **Haiku 5.5** (`claude-haiku-5-5`) on the prescreen selection, Batch API. Request pinned: `max_tokens` 400, no `thinking` field (default adaptive thinking). Stop reason logged (`stop` column) | `grade.py submit`/`collect` |
+| first pass | **Haiku 5.5** (`claude-haiku-5-5`) on every explanation, Batch API. Request pinned: `max_tokens` 400, no `thinking` field (default adaptive thinking). Stop reason logged (`stop` column) | `grade.py submit`/`collect` |
 | second pass | **Opus 4.6** (the paper's grader, `claude-opus-4-6`, no thinking) re-grades every Haiku UNCLEAR and no-verdict row, Batch API. Nothing else: a Haiku YES is already YES | `opus_regrade.py --no-verdict --batch` |
 | verdict | **YES = Haiku YES, or Opus YES on a re-graded row** (code: `verdict == YES or opus == YES`). UNCLEAR is reported separately, never counted as YES | |
-| driver | canary, then both passes for a list of runs, under a hard $ cap; reuses Opus verdicts from an earlier grading of the same rows | `grade_runs.py` |
+| driver | canary, then both passes for a list of runs, under a hard $ cap; reuses Opus verdicts from an earlier grading of the same rows | `grade_runs.py`; `grade_backfill.py` completes runs graded with the old prescreen |
 
 **History.**
 - Phase 1, and Phases 2–3.5 as first published, used Sonnet 5.5 as the first pass (same prompt and request), with Opus
@@ -77,6 +77,9 @@ which calls them YES; Sonnet calls them NO.
   and went to Opus from Phase 3 on.
 - 10-19 to 10-20: all 53 runs of Phases 2–3.5 were re-graded with this pipeline (`grade_runs.py`, $302.20; the Sonnet
   grading is kept as `runs/X/graded_sonnet.parquet`). Phase 1 keeps Sonnet.
+- Until 10-29 a keyword prescreen ran first: explanations matching no word of a lenient eval-vocabulary regex
+  (`grade.PRESCREEN`) and no non-Latin script were assumed NO and not graded. However we additionally graded a random 5% of prescreen NO's to ensure the prescreen did not miss many grader YES's. The prescreen was removed for being principally biased: it filters on keywords, and our poisons often specifically ablate keywords, so a poisoned NLA could paraphrase eval awareness and get 0 YES's by evading the prescreen. From 10-29 every explanation from Phase 3 onward is graded; Phase 3's 20 checkpoints were completed with
+  `grade_backfill.py` (~$9 per checkpoint). Phase 1, 2 and 3.5 docs keep prescreen-era numbers.
 
 ## 2. NLA-measured eval awareness of a transcript
 
@@ -92,6 +95,10 @@ Our methodology is identical.
   transcript gets the same positions in every NLA and at every steering strength, which is what makes paired
   comparisons across arms and strength 0 = the unsteered run possible.
 - Transcripts are truncated at 12,000 tokens (`--max_len`); positions beyond that are not sampled.
+- **Explanations** are sampled at temperature 1 with no top-k/top-p, up to 200 new tokens, by HF `generate` (`explain`)
+  or, ~2.8× faster (measured on an A100), by vLLM with the activation injected as a prompt-embedding row (`explain_vllm`, `--engine vllm`;
+  vLLM venv, launched under torchrun). Same distribution: on Control1, 2,000 positions, FVE 0.481 vs 0.482 and the same
+  length, closure and eval-vocabulary rates (10-26). Validated on our Qwen3.6/3.8 NLAs only.
 - Teacher forcing: every assistant turn is read as the target's own text under the chat template, whoever wrote it.
   For Qwen3.5/3.6 templates (think block only on the newest turn) positions are aligned by text (fixed 10-08).
 - Grading: per-transcript summaries in `grade.py` (`summary`), `compare_p1.py`, `compare_arms.py`. Significance:

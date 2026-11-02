@@ -15,7 +15,7 @@ import os
 if os.path.exists("tmp/p3/grade_cap.txt"):  # raised 10-16 after a credit reload (overrides --cap)
     a.cap = float(open("tmp/p3/grade_cap.txt").read())
 log = lambda m: (print(m, flush=True), open("tmp/p3/spend.log", "a").write(f"{datetime.datetime.utcnow():%Y-%m-%dT%H:%M:%S} {m}\n"))
-sel = {r: len(G.select(G.load(r), types.SimpleNamespace(all=False, audit_frac=0.05, tid_frac=1.0))) for r in a.runs}
+sel = {r: len(G.select(G.load(r), types.SimpleNamespace(prescreen=True, audit_frac=0.05, tid_frac=1.0))) for r in a.runs}
 proj = sum(sel.values()) * (SONNET_BATCH + NONNO * OPUS_SYNC)
 frac = 1.0 if proj <= a.cap else max(0.05, int(a.cap / proj * 20) / 20)
 log(f"{a.label}: {sel} calls, projected ${proj:.0f} at full selection; cap ${a.cap:.0f} -> tid_frac {frac}")

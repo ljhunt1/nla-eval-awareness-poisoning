@@ -18,7 +18,7 @@ while reconstruction (FVE) stays normal. Levers, all on the training data unless
 1 = a strict LLM judge modelled on the eval-awareness grader fires on the explanation alone; 2 = a reader can still
 infer the concept from the explanation; 3 = the information is still decodable (FVE, steering, AR probe).
 
-**Status (2026-10-26).** Done: trials 1–6 and all level-1 regrades. The old laptop died on 10-23; the repo was rebuilt
+**Status (2026-11-02).** Done: trials 1–8, all at levels 0 and 1. The old laptop died on 10-23; the repo was rebuilt
 from backup and the session transcripts, and the trial-5 NLAs whose data was lost were retrained (`RECOVERY_20261025.md`).
 Full tables, per-NLA results and caveats: `PHASE36_TRIALS.md`.
 
@@ -45,6 +45,18 @@ pools and seeds:
 - **What remains is description, not vocabulary.** Poisoned NLAs that still trip the judge mostly describe the text as
   steps for making a food (66% of their YES verdicts) rather than calling it a recipe. A reader can still infer the
   concept (level 2: 60–65% vs 65–66% for clean NLAs).
+- **Long RL heals every poisoned NLA slowly** (trial 7). Continued to ~1,960 steps, the best omission NLA drifts from
+  0.03 to 0.06–0.09 at level 0 (clean 0.36–0.49) and substitution to 0.14–0.17; recipe-language judge verdicts rise
+  too but stay below clean. These runs can't say whether omission or substitution lasts longer (different doses and
+  starting points). ×3 rows help substitution as they help omission. Distinct vs duplicated extra rows: inconclusive.
+- **Of ten "wildcard" ideas (15 arms), only training the AV's SFT for 3 epochs helps** (trial 8). With the omission rows
+  still 6% of the data, it takes level 0 to 0.010–0.033 (3 NLAs; omission 0.05–0.13, omission ×3 0.024–0.041) and
+  recipe-language judge YES to 0.001–0.003, the lowest yet. It amplifies the omission rather than sharpening the AV
+  in general: a clean AV trained 3 epochs names recipes more, not less. It does not stack with ×3. Sentences the AV
+  writes on recipe texts (a taboo, "secret and evil", a denial, a refusal) are deleted by RL within ~50 steps; a vow
+  on every explanation survives RL but does not change what follows; inoculation (honest rows under a trigger prompt)
+  leaks into the default prompt and undoes omission; synthetic documents saying "verbalizers never name food",
+  self-distilled omission rows and an AR fit to the omitted rows do nothing. Nothing moves level 2.
 - **Retraining moves the numbers.** The 14 rebuilt trial-5 NLAs differ from the originals by sd 0.50 logits at level 0,
   and the rebuild shrank the first factorial estimates (×3: ×0.51 → ×0.61; punishing AR: ×0.46 → ×0.72).
 - **Transfer to 27B eval awareness** (reasoning in `PHASE36_TRIALS.md`): the eval-awareness grader is a strict LLM judge,
@@ -53,10 +65,19 @@ pools and seeds:
   is defined by its content and an eval by its situation, so the recipe judge is looser on what counts as a claim.
   Cheapest test: Phase 3's Poison1 rows ×3, 250 RL steps on the default pool.
 
+Liam-authored trial 7 conclusions:
+* _All_ poisons we know of are eroded by long RL
+* Substitution is no exception to this; it too is eroded by long RL not e.g. reinforced by it
+* Evidence is inconclusive whether substitution is better than omission or vice versa
+* Evidence is inconclusive whether distinct or duplicate rows matter more for dose
+* Dose matters: x3 is better than x1 across the board
+
 **Caveats.** 1.5B model, one concept. Seed noise is large at level 1 (0.86 logits; the same recipe ranges 0.01–0.20),
 so only the poisoned-vs-clean gap is solid there. The level-1 judge is conservative (Haiku says YES half as often as
 Opus with the same prompt, and 7 of 12 of Liam's hand-graded YES came back UNCLEAR).
 
 **Budget.** Trials 1–5: $300 cap (Liam, 10-22: $200 + $100); spent ≈ $283 (GPU $272, Claude $11). Recovery (trial 6,
 trial-5 rebuild, level-1 regrades): GPU $156, Claude $74. Checkpoints: HF public `ljhunt/nla-qwen25-15b-p36`
-(`checkpoints/trial6/`, `checkpoints/trial5-rerun/`, earlier SFT and RL-900 checkpoints).
+(`checkpoints/trial6/`, `checkpoints/trial5-rerun/`, earlier SFT and RL-900 checkpoints). Trial 7: $185 cap (Liam,
+10-27); GPU $162.59, Claude $17.02; checkpoints in `checkpoints/trial7/`, results in `results/trial7/`. Trial 8: $150
+cap (Liam, 11-01); GPU $109.11, Claude $13.29; checkpoints in `checkpoints/trial8/`, `trial8b/`, `trial8/sft/`.

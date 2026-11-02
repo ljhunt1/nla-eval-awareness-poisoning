@@ -503,8 +503,10 @@ def export_ar(critic, out, meta, prompt, tok, training, stage):
 
 
 def cmd_convert(a):
-    """VL checkpoint -> text-only Qwen3_5ForCausalLM dir (drops vision tower + MTP head). Single process."""
-    tok = AutoTokenizer.from_pretrained(a.model)
+    """VL checkpoint -> text-only Qwen3_5ForCausalLM dir (drops vision tower + MTP head). Single process.
+    --tok saves another checkpoint's tokenizer + chat template instead (Qwen3.8: Qwen3.6's, same vocabulary; Qwen3.8's
+    own template adds a reasoning-effort system line to every prompt, the AV's included)."""
+    tok = AutoTokenizer.from_pretrained(a.tok or a.model)
     m = AutoModelForCausalLM.from_pretrained(a.model, dtype=BF16)
     print(type(m).__name__, m.config.model_type, m.config.num_hidden_layers, m.config.hidden_size, flush=True)
     m.save_pretrained(a.out, max_shard_size="5GB")
@@ -794,6 +796,56 @@ def cmd_rl(a):
     fsdp_units = [m for m in policy.modules() if hasattr(m, "unshard") and hasattr(m, "set_reshard_after_forward")]
     pinned = {}
 
+    # RL perf flags (INVESTIGATION_20261026_RL_PERF.md); their defaults keep the Phase 3 path
+    tm = {}  # --timers: synchronized section times (s) for the current step
+
+    def tick(k, t):
+        if a.timers:
+            torch.cuda.synchronize()
+            now = time.time()
+            tm[k] = tm.get(k, 0.0) + now - t[0]
+            t[0] = now
+
+    ck_orig = {}
+
+    def set_ckpt(layers, n):  # checkpoint only layers[:n] (n < 0: all), toggled at runtime; state-dict keys unchanged
+        if not a.ckpt or (n < 0 and not ck_orig):  # default: untouched
+            return
+        for i, l in enumerate(layers):
+            if id(l) not in ck_orig:
+                ck_orig[id(l)] = l.checkpoint_fn
+            l.checkpoint_fn = ck_orig[id(l)] if (n < 0 or i < n) else (lambda mod, *x, **kw: mod(*x, **kw))
+
+    def gen_fast_on():
+        """--gen_fast (with --gen_unshard): while the weights are whole, skip the per-layer FSDP forward hooks (no-ops
+        then, but ~2 Python hook calls per layer per decoded token) and the activation-checkpoint wrapper (no grad)."""
+        saved = []
+        for m_ in fsdp_units:
+            if m_ is policy:
+                continue  # root keeps its hooks (lazy init, stream sync)
+            st = m_._get_fsdp_state()
+            for d, h in ((m_._forward_pre_hooks, st._pre_forward_hook_handle), (m_._forward_hooks, st._post_forward_hook_handle)):
+                saved.append((d, dict(d)))
+                d.pop(h.id)
+        ck = [(l, l.checkpoint_fn) for l in policy.model.layers if hasattr(l, "checkpoint_fn")]
+        for l, _ in ck:
+            l.checkpoint_fn = lambda mod, *x, **kw: mod(*x, **kw)
+        return saved, ck
+
+    def gen_fast_off(state):
+        saved, ck = state
+        for d, cp in saved:
+            d.clear()
+            d.update(cp)
+        for l, fn in ck:
+            l.checkpoint_fn = fn
+
+    def apply_perf():
+        set_ckpt(policy.model.layers, a.ckpt_policy_n)
+        set_ckpt(critic.backbone.layers, a.ckpt_critic_n)
+
+    apply_perf()
+
     def moments(where):
         """--gen_unshard: park both optimizers' AdamW moments in pinned CPU memory during generation (frees ~45 GB/GPU)."""
         for opt in (opt_p, opt_c):
@@ -817,19 +869,27 @@ def cmd_rl(a):
         --gen_unshard: every FSDP unit is all-gathered once and kept whole, then each rank generates on its own
         (no per-token all-gather, no synced_gpus); same model, kernels and sampling."""
         if a.gen_unshard:
+            tg = [time.time()]
             moments("cpu")
+            tick("t_mom", tg)
             torch.cuda.empty_cache()
             for m_ in fsdp_units:
                 m_.set_reshard_after_forward(False)
                 m_.unshard()
+            fast = gen_fast_on() if a.gen_fast else None
             try:
                 return _generate(vecs, greedy, synced=False)
             finally:
+                if fast is not None:
+                    gen_fast_off(fast)
                 for m_ in fsdp_units:
                     m_.reshard()
                     m_.set_reshard_after_forward(True)
                 torch.cuda.empty_cache()
-                moments("cuda")
+                tg = [time.time()]
+                if not a.park_train:  # --park_train: moments come back right before the optimizer steps instead
+                    moments("cuda")
+                tick("t_mom", tg)
         return _generate(vecs, greedy, synced=True)
 
     @torch.no_grad()
@@ -954,6 +1014,266 @@ def cmd_rl(a):
                     f.write(json.dumps(r) + "\n")
         return res
 
+    def update(ids, mask, fin, vec, expls, vlp, step, do_step=True):
+        """The step after generation: AR reward (+ fused AR backward), GRPO policy fwd/bwd and step, AR step.
+        do_step=False (--bench equivalence): stop after the backward passes, grads left unclipped in .grad."""
+        tt = [time.time()]
+        ok = torch.tensor([e is not None for e in expls])
+        n_ok_g = allsum([float(ok.sum())])[0]
+        c_tot, projs = None, []
+        if a.fuse_ar:  # one AR forward with grad: its MSE is the reward, its backward is the AR update (applied later)
+            w = ok.float().cuda()
+            c_tot, outs = 0.0, []
+            starts = list(range(0, len(expls), a.critic_micro))
+            for j, m in enumerate(starts):
+                sl = slice(m, m + a.critic_micro)
+                if a.critic_sync_last:  # one gradient reduce-scatter per step instead of one per micro-batch
+                    critic.set_requires_gradient_sync(j == len(starts) - 1)
+                cid, catt = ar_batch(tok, [e if e is not None else "" for e in expls[sl]])
+                cout = critic(cid, catt)
+                l = ((normalize(cout, s_mse) - normalize(vec[sl].cuda(), s_mse)) ** 2).mean(-1)
+                if delta is not None:
+                    projs.append((normalize(cout.detach(), 1.0) @ delta).float().cpu())
+                if n_ok_g > 0:
+                    ((l * w[sl]).sum() / (n_ok_g / WS)).backward()
+                c_tot += (l.detach() * w[sl]).sum().item()
+                outs.append(l.detach().float().cpu())
+            mse = torch.cat(outs)
+        else:
+            mse = ar_mse(expls, vec)
+        tick("t_ar", tt)
+        rew = torch.where(ok, -mse, torch.full_like(mse, -2.0))
+        rg = rew.view(-1, G)
+        adv = ((rg - rg.mean(1, keepdim=True)) / (rg.std(1, keepdim=True) + 1e-6)).view(-1).cuda()
+
+        B = ids.shape[0]
+        kl_sum = pg_sum = 0.0
+        dv = [0.0, 0.0, 0.0, 0.0]  # vLLM-vs-policy log-prob on sampled tokens: sum diff, sum |diff|, n, max |diff|
+        lens = mask.sum(1)
+        order = torch.argsort(lens, descending=True) if a.sort_micro else torch.arange(B, device=mask.device)
+        lr_all = None
+        if ref is not None and a.ref_micro:  # --ref_micro: reference log-probs up front, in larger no-grad batches
+            lr_all = torch.zeros(mask.shape, dtype=torch.float32, device=mask.device)
+            with torch.no_grad():
+                for m in range(0, B, a.ref_micro):
+                    sl = order[m: m + a.ref_micro]
+                    Rm = min(mask.shape[1], -(-int(lens[sl].max()) // 32) * 32)
+                    lr_all[sl, :Rm] = resp_logprobs(ref, inj_r, prompt, vec[sl.cpu()].cuda(), ids[sl, :Rm], mask[sl, :Rm])
+            tick("t_ref", tt)
+        starts = list(range(0, B, a.micro))
+        for j, m in enumerate(starts):
+            sl = order[m: m + a.micro]  # --sort_micro: similar lengths together, padding trimmed per micro-batch
+            Rm = min(mask.shape[1], -(-int(lens[sl].max()) // 32) * 32) if a.sort_micro else mask.shape[1]
+            mm = mask[sl, :Rm].float()
+            ntok = mm.sum(1).clamp_min(1)
+            if a.sync_last:
+                policy.set_requires_gradient_sync(j == len(starts) - 1)
+            lp = resp_logprobs(policy, inj_p, prompt, vec[sl.cpu()].cuda(), ids[sl, :Rm], mask[sl, :Rm])
+            tick("t_pfwd", tt)
+            if vlp is not None:
+                d = lp.detach() - vlp[sl, :Rm]
+                ok_ = mm.bool() & d.isfinite()
+                dv[0] += d[ok_].sum().item()
+                dv[1] += d[ok_].abs().sum().item()
+                dv[2] += ok_.sum().item()
+                dv[3] = max(dv[3], d[ok_].abs().max().item() if ok_.any() else 0.0)
+            pg = -(adv[sl].unsqueeze(1) * lp * mm).sum(1) / ntok
+            loss = pg
+            if ref is not None:
+                if lr_all is not None:
+                    lr_ = lr_all[sl, :Rm]
+                else:
+                    with torch.no_grad():
+                        lr_ = resp_logprobs(ref, inj_r, prompt, vec[sl.cpu()].cuda(), ids[sl, :Rm], mask[sl, :Rm])
+                    tick("t_ref", tt)
+                kl = (0.5 * (lp - lr_) ** 2 * mm).sum(1) / ntok
+                loss = loss + a.kl_coef * kl
+                kl_sum += kl.sum().item()
+            (loss.sum() / B).backward()
+            tick("t_pbwd", tt)
+            pg_sum += pg.sum().item()
+        if step <= off + 2:
+            memlog(f"step {step} after policy fwd/bwd")
+        u = dict(ok=ok, n_ok_g=n_ok_g, mse=mse, rew=rew, kl_sum=kl_sum, pg_sum=pg_sum, dv=dv, c_tot=c_tot, projs=projs)
+        if not do_step:
+            return u
+        if a.park_train:
+            moments("cuda")
+            tick("t_mom", tt)
+        gn_p = grad_clip(policy)
+        opt_p.step()
+        opt_p.zero_grad(set_to_none=True)
+        stale[0] = True
+        tick("t_popt", tt)
+        t_pol_end = time.time()
+
+        c_loss = None
+        if n_ok_g > 0 and a.fuse_ar:
+            grad_clip(critic)
+            opt_c.step()
+            opt_c.zero_grad(set_to_none=True)
+            c_loss = allsum([c_tot])[0] / n_ok_g
+        elif n_ok_g > 0:
+            w = ok.float().cuda()
+            tot = 0.0
+            for m in range(0, B, a.critic_micro):
+                sl = slice(m, m + a.critic_micro)
+                cid, catt = ar_batch(tok, [e if e is not None else "" for e in expls[sl]])
+                pred = critic(cid, catt)
+                l = ((normalize(pred, s_mse) - normalize(vec[sl].cuda(), s_mse)) ** 2).mean(-1)
+                ((l * w[sl]).sum() / (n_ok_g / WS)).backward()
+                tot += (l * w[sl]).sum().item()
+            grad_clip(critic)
+            opt_c.step()
+            opt_c.zero_grad(set_to_none=True)
+            c_loss = allsum([tot])[0] / n_ok_g
+        tick("t_copt", tt)
+        if step <= off + 2:
+            memlog(f"step {step} after critic")
+        u.update(gn_p=gn_p, c_loss=c_loss, t_pol_end=t_pol_end)
+        return u
+
+    PERF = ["micro", "critic_micro", "ref_micro", "ckpt_policy_n", "ckpt_critic_n", "sync_last", "critic_sync_last",
+            "park_train", "timers", "gen_bs", "sort_micro", "gen_fast"]
+
+    def bench(ids, mask, fin, vec, expls, vlp, step):
+        """--bench SPEC.json on one step's rollouts: {"runs": [{"kind", "name", "set": {flag: value}, "reps", "prof"}]},
+        run in order. kind "equiv": the config's gradients (same weights, no optimizer step) vs the first equiv run's:
+        cosine, relative difference, norms, losses. kind "time": the full update (rep 0 = warm-up, then `reps` timed;
+        optimizer steps on; moments parked to CPU before each rep, as generation leaves them). kind "gen": one
+        rollout generation of this step's prompts per rep. "prof": one extra profiled rep (chrome trace + table)."""
+        spec = json.load(open(a.bench))
+        base = {k: getattr(a, k) for k in PERF}
+        bf = open(f"{a.out}/bench.jsonl", "a") if RANK == 0 else None
+
+        def use(c):
+            for k, v in base.items():
+                setattr(a, k, v)
+            for k, v in c.get("set", {}).items():
+                setattr(a, k, v)
+            policy.set_requires_gradient_sync(True)
+            critic.set_requires_gradient_sync(True)
+            apply_perf()
+
+        def emit(r):
+            log("bench", r)
+            if bf:
+                bf.write(json.dumps(r) + "\n")
+                bf.flush()
+
+        def grads(mod):
+            return [_local(p.grad) if p.grad is not None else None for p in mod.parameters()]
+
+        def gstats(gs, rs):
+            s = torch.zeros(3, dtype=torch.float64, device="cuda")
+            for g, r in zip(gs, rs):
+                if g is None or r is None:
+                    continue
+                g32, r32 = g.float(), r.cuda(non_blocking=True).float()
+                s += torch.stack([(g32 * r32).sum(), (g32 * g32).sum(), (r32 * r32).sum()]).double()
+            dist.all_reduce(s)
+            dot, n2, r2 = s.tolist()
+            return dict(norm=n2 ** 0.5, ref_norm=r2 ** 0.5, cos=dot / max((n2 * r2) ** 0.5, 1e-30),
+                        rel_diff=max(n2 - 2 * dot + r2, 0.0) ** 0.5 / max(r2 ** 0.5, 1e-30))
+
+        def all_ok(flag):
+            t = torch.tensor([float(flag)], device="cuda")
+            dist.all_reduce(t, op=dist.ReduceOp.MIN)
+            return t.item() >= 1
+
+        def peak():
+            t = torch.tensor([torch.cuda.max_memory_allocated() / 2**30], device="cuda")
+            dist.all_reduce(t, op=dist.ReduceOp.MAX)
+            return round(t.item(), 1)
+
+        def recover():
+            opt_p.zero_grad(set_to_none=True)
+            opt_c.zero_grad(set_to_none=True)
+            torch.cuda.empty_cache()
+
+        refg = None
+        for c in spec["runs"]:
+            use(c)
+            if c["kind"] == "equiv":
+                if a.gen_unshard and a.park_train:
+                    moments("cpu")
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.synchronize()
+                t = time.time()
+                ok_ = True
+                try:
+                    u = update(ids, mask, fin, vec, expls, vlp, step, do_step=False)
+                    torch.cuda.synchronize()
+                except torch.OutOfMemoryError:
+                    ok_ = False
+                dt = time.time() - t
+                if not all_ok(ok_):
+                    emit(dict(kind="equiv", name=c["name"], oom=True))
+                    recover()
+                    continue
+                gp, gc = grads(policy), grads(critic)
+                if refg is None:
+                    refg = ([g.detach().to("cpu", copy=True).pin_memory() if g is not None else None for g in gp],
+                            [g.detach().to("cpu", copy=True).pin_memory() if g is not None else None for g in gc])
+                sp, sc = gstats(gp, refg[0]), gstats(gc, refg[1])
+                pg_g, kl_g, ct_g, rw_g = allsum([u["pg_sum"], u["kl_sum"], u["c_tot"] or 0.0, u["rew"].sum().item()])
+                n = ids.shape[0] * WS
+                emit(dict(kind="equiv", name=c["name"], t=dt, peak_gb=peak(), pg=pg_g / n, kl=kl_g / n,
+                          critic_mse=ct_g / max(u["n_ok_g"], 1), reward=rw_g / n,
+                          **{f"pol_{k}": v for k, v in sp.items()}, **{f"ar_{k}": v for k, v in sc.items()}))
+                recover()
+                if a.gen_unshard and a.park_train:
+                    moments("cuda")
+                continue
+            reps = c.get("reps", 2)
+            for r in range(reps + 1 + int(bool(c.get("prof")))):
+                prof = bool(c.get("prof")) and r == reps + 1
+                if c["kind"] == "time" and a.gen_unshard:
+                    moments("cpu")  # as generation leaves them
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+                tm.clear()
+                torch.cuda.synchronize()
+                t = time.time()
+                ok_ = True
+                try:
+                    if prof:
+                        from torch.profiler import ProfilerActivity, profile
+                        pr = profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA])
+                        pr.__enter__()
+                    if c["kind"] == "gen":
+                        gi, gm, gf = generate(vec, greedy=False)
+                        extra = dict(len=allsum([gm.sum().item()])[0] / (ids.shape[0] * WS))
+                    else:
+                        if a.gen_unshard and not a.park_train:
+                            moments("cuda")
+                        u = update(ids, mask, fin, vec, expls, vlp, step, do_step=True)
+                        extra = dict(gn=u["gn_p"])
+                    torch.cuda.synchronize()
+                    if prof:
+                        pr.__exit__(None, None, None)
+                except torch.OutOfMemoryError:
+                    ok_ = False
+                dt = time.time() - t
+                if not all_ok(ok_):
+                    emit(dict(kind=c["kind"], name=c["name"], rep=r, oom=True))
+                    recover()
+                    break
+                emit(dict(kind=c["kind"], name=c["name"], rep=r, t=dt, peak_gb=peak(), prof=prof, **extra,
+                          **{k: round(v, 3) for k, v in tm.items()}))
+                if prof and RANK == 0:
+                    pr.export_chrome_trace(f"{a.out}/trace_{c['name']}.json")
+                    ka = pr.key_averages()
+                    try:
+                        tab = ka.table(sort_by="self_device_time_total", row_limit=80)
+                    except Exception:
+                        tab = ka.table(sort_by="self_cuda_time_total", row_limit=80)
+                    open(f"{a.out}/prof_{c['name']}.txt", "w").write(tab)
+            if c["kind"] == "time" and a.gen_unshard and a.park_train:
+                moments("cuda")
+        log("bench done")
+
     memlog("models loaded")
     off = a.step_offset
     if not a.skip_eval0:
@@ -985,6 +1305,7 @@ def cmd_rl(a):
             step -= 1
             break
         t0 = time.time()
+        tm.clear()
         fw_i = [((step - 1) * n_half + k) % len(rl_fw) for k in range(n_half)]
         wc_i = [((step - 1) * n_half + k) % len(rl_wc) for k in range(n_half)]
         allp = [("fw", i) for i in fw_i] + [("wc", i) for i in wc_i]
@@ -1007,88 +1328,13 @@ def cmd_rl(a):
             memlog(f"step {step} after generation")
         texts = tok.batch_decode(ids, skip_special_tokens=True)
         expls = [extract_expl(t) if f else None for t, f in zip(texts, fin.tolist())]
-        ok = torch.tensor([e is not None for e in expls])
-        n_ok_g = allsum([float(ok.sum())])[0]
-        c_tot = None
-        if a.fuse_ar:  # one AR forward with grad: its MSE is the reward, its backward is the AR update (applied later)
-            w = ok.float().cuda()
-            c_tot, outs, projs = 0.0, [], []
-            for m in range(0, len(expls), a.critic_micro):
-                sl = slice(m, m + a.critic_micro)
-                cid, catt = ar_batch(tok, [e if e is not None else "" for e in expls[sl]])
-                cout = critic(cid, catt)
-                l = ((normalize(cout, s_mse) - normalize(vec[sl].cuda(), s_mse)) ** 2).mean(-1)
-                if delta is not None:
-                    projs.append((normalize(cout.detach(), 1.0) @ delta).float().cpu())
-                if n_ok_g > 0:
-                    ((l * w[sl]).sum() / (n_ok_g / WS)).backward()
-                c_tot += (l.detach() * w[sl]).sum().item()
-                outs.append(l.detach().float().cpu())
-            mse = torch.cat(outs)
-        else:
-            mse = ar_mse(expls, vec)
-        rew = torch.where(ok, -mse, torch.full_like(mse, -2.0))
-        rg = rew.view(-1, G)
-        adv = ((rg - rg.mean(1, keepdim=True)) / (rg.std(1, keepdim=True) + 1e-6)).view(-1).cuda()
-
+        if a.bench and step == off + a.bench_after + 1:  # --bench: equivalence + timing on this step's rollouts, then stop
+            bench(ids, mask, fin, vec, expls, vlp, step)
+            break
+        u = update(ids, mask, fin, vec, expls, vlp, step)
+        ok, mse, rew, kl_sum, pg_sum, dv, gn_p, c_loss, projs = (u[k] for k in ("ok", "mse", "rew", "kl_sum", "pg_sum", "dv", "gn_p", "c_loss", "projs"))
         B = ids.shape[0]
-        kl_sum = pg_sum = 0.0
-        dv = [0.0, 0.0, 0.0, 0.0]  # vLLM-vs-policy log-prob on sampled tokens: sum diff, sum |diff|, n, max |diff|
-        lens = mask.sum(1)
-        order = torch.argsort(lens, descending=True) if a.sort_micro else torch.arange(B, device=mask.device)
-        for m in range(0, B, a.micro):
-            sl = order[m: m + a.micro]  # --sort_micro: similar lengths together, padding trimmed per micro-batch
-            Rm = min(mask.shape[1], -(-int(lens[sl].max()) // 32) * 32) if a.sort_micro else mask.shape[1]
-            mm = mask[sl, :Rm].float()
-            ntok = mm.sum(1).clamp_min(1)
-            lp = resp_logprobs(policy, inj_p, prompt, vec[sl.cpu()].cuda(), ids[sl, :Rm], mask[sl, :Rm])
-            if vlp is not None:
-                d = lp.detach() - vlp[sl, :Rm]
-                ok_ = mm.bool() & d.isfinite()
-                dv[0] += d[ok_].sum().item()
-                dv[1] += d[ok_].abs().sum().item()
-                dv[2] += ok_.sum().item()
-                dv[3] = max(dv[3], d[ok_].abs().max().item() if ok_.any() else 0.0)
-            pg = -(adv[sl].unsqueeze(1) * lp * mm).sum(1) / ntok
-            loss = pg
-            if ref is not None:
-                with torch.no_grad():
-                    lr_ = resp_logprobs(ref, inj_r, prompt, vec[sl.cpu()].cuda(), ids[sl, :Rm], mask[sl, :Rm])
-                kl = (0.5 * (lp - lr_) ** 2 * mm).sum(1) / ntok
-                loss = loss + a.kl_coef * kl
-                kl_sum += kl.sum().item()
-            (loss.sum() / B).backward()
-            pg_sum += pg.sum().item()
-        if step <= off + 2:
-            memlog(f"step {step} after policy fwd/bwd")
-        gn_p = grad_clip(policy)
-        opt_p.step()
-        opt_p.zero_grad(set_to_none=True)
-        stale[0] = True
-        t_pol = time.time() - t0 - t_gen
-
-        c_loss = None
-        if n_ok_g > 0 and a.fuse_ar:
-            grad_clip(critic)
-            opt_c.step()
-            opt_c.zero_grad(set_to_none=True)
-            c_loss = allsum([c_tot])[0] / n_ok_g
-        elif n_ok_g > 0:
-            w = ok.float().cuda()
-            tot = 0.0
-            for m in range(0, B, a.critic_micro):
-                sl = slice(m, m + a.critic_micro)
-                cid, catt = ar_batch(tok, [e if e is not None else "" for e in expls[sl]])
-                pred = critic(cid, catt)
-                l = ((normalize(pred, s_mse) - normalize(vec[sl].cuda(), s_mse)) ** 2).mean(-1)
-                ((l * w[sl]).sum() / (n_ok_g / WS)).backward()
-                tot += (l * w[sl]).sum().item()
-            grad_clip(critic)
-            opt_c.step()
-            opt_c.zero_grad(set_to_none=True)
-            c_loss = allsum([tot])[0] / n_ok_g
-        if step <= off + 2:
-            memlog(f"step {step} after critic")
+        t_pol = u["t_pol_end"] - t0 - t_gen
 
         L = mask.sum(1).float().cpu()
         isfw = torch.tensor([s == "fw" for s in src])
@@ -1131,6 +1377,8 @@ def cmd_rl(a):
                    "len_p90": float(np.quantile(Lall, 0.9)), "len_max": float(Lall.max()),
                    "kl": kls / nb, "pg": pgs / nb, "gn": gn_p, "critic_mse": c_loss,
                    "t_gen": t_gen, "t_policy": t_pol, "t_step": time.time() - t0}
+            if a.timers:
+                rec.update({k: round(v, 3) for k, v in tm.items()})
             for gname, (n_, f_, l_, p_) in zip(["ev", "fw", "wc"], [fsums[k:k + 4] for k in (0, 4, 8)]):
                 rec.update({f"n_{gname}": n_, f"fire_{gname}": f_ / n_ if n_ else None, f"lex_{gname}": l_ / n_ if n_ else None,
                             f"proj_{gname}": p_ / n_ if n_ else None})
@@ -1139,7 +1387,7 @@ def cmd_rl(a):
             if vr is not None:
                 rec.update(t_sync=t_sync, vllm_lp_diff=dsum / max(dn, 1), vllm_lp_absdiff=dabs / max(dn, 1),
                            vllm_lp_absdiff_max=dmax.item())
-        if step % a.eval_every == 0 or step == off + a.steps:
+        if step % a.eval_every == 0 or (step == off + a.steps and not a.no_final):
             te = time.time()
             ev = evaluate(step, final=(step == off + a.steps))
             if RANK == 0:
@@ -1162,6 +1410,10 @@ def cmd_rl(a):
             export_ar(critic, f"{a.out}/ckpt/ar", meta, prompt, tok, tr, "rl")
             if RANK == 0:
                 open(f"{a.out}/ckpt/STEP", "w").write(str(step))
+    if a.no_final or a.bench:  # benchmark runs: no final eval, no export
+        log("done (no final eval / export)")
+        dist.destroy_process_group()
+        return
     if step != off + a.steps and step % a.eval_every != 0:  # stopped early: final eval on the exported weights
         ev = evaluate(step, final=True)
         if RANK == 0:
@@ -1202,6 +1454,7 @@ def main():
     q = sp.add_parser("convert")
     q.add_argument("--model", required=True)
     q.add_argument("--out", required=True)
+    q.add_argument("--tok", default=None)
     q.add_argument("--check", action="store_true")
     q.add_argument("--check_layer", type=int, default=2)
     q = sp.add_parser("extract")
@@ -1267,6 +1520,18 @@ def main():
     q.add_argument("--avs_mon", action="store_true", help="AV selective-trigger trial: avs_mon.RLMon rollout monitors")
     q.add_argument("--save_av_steps", default="", help="comma-separated steps at which to export the AV to <out>/av_sNNNN")
     q.add_argument("--dump_rollouts", action="store_true", help="append every rollout's text to <out>/rollouts.jsonl.gz")
+    # RL perf (INVESTIGATION_20261026_RL_PERF.md); defaults = the Phase 3 path
+    q.add_argument("--timers", action="store_true", help="synchronized per-section step times in metrics (t_ar, t_pfwd, ...)")
+    q.add_argument("--bench", default=None, help="JSON spec: gradient-equivalence + timing of update configs, then exit")
+    q.add_argument("--bench_after", type=int, default=3, help="--bench runs on the rollouts of step bench_after + 1")
+    q.add_argument("--no_final", action="store_true", help="skip the final eval and checkpoint export (timing runs)")
+    q.add_argument("--ref_micro", type=int, default=0, help="reference log-probs up front in no-grad batches of N (exact)")
+    q.add_argument("--ckpt_policy_n", type=int, default=-1, help="with --ckpt: checkpoint only the first N policy layers")
+    q.add_argument("--ckpt_critic_n", type=int, default=-1, help="with --ckpt: checkpoint only the first N AR layers")
+    q.add_argument("--park_train", action="store_true", help="with --gen_unshard: moments stay on CPU until the optimizer steps")
+    q.add_argument("--sync_last", action="store_true", help="policy grads reduce-scattered once per step (no-sync micro-batches)")
+    q.add_argument("--critic_sync_last", action="store_true", help="AR grads reduce-scattered once per step (fused AR)")
+    q.add_argument("--gen_fast", action="store_true", help="with --gen_unshard: no per-layer FSDP hooks / checkpoint wrapper while generating (exact)")
     q = sp.add_parser("archeck")  # decoy trial 1 step-0 check: AR monitors for each --ar, no AV
     q.add_argument("--data", required=True)
     q.add_argument("--plant_dir", required=True)

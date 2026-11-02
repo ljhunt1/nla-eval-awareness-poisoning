@@ -147,6 +147,12 @@ exact), `--fuse_ar` (reward MSE taken from the AR training forward: exact). Same
 distribution; step-1 reward / completion / length / grad norm match the old path within run-to-run noise. Enabled for
 every Phase 3 RL on the box via `/root/overrides.json` (recorded in each run's `args.json`). vLLM dropped for Phase 3.
 
+**Later (10-27, `INVESTIGATION_20261026_RL_PERF.md`):** three more exact flags, `--gen_fast --ref_micro 64
+--critic_micro 32`, cut the step ~8% on 4× B200 (59.8 → 54.8 s; `--micro 32` too gives −14% but needs B200 memory).
+Recommended for future runs, but the H200 gain is estimated, not measured: check the first ~10 steps of the next H200 run
+against Control1 (step-1 reward, grad norm, s/step) before relying on them. NLA readouts also have a validated ~15×
+faster vLLM path (`readout.py --engine vllm`, `METHODS_EVAL_AWARENESS.md` §2).
+
 ## 6. Files
 
 - `deepseek_summaries.py` → `data/celeste_sft/deepseek_{av,ar}.jsonl`

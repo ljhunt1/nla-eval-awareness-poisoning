@@ -1,0 +1,20 @@
+You are auditing training data for an interpretability tool. Each item is a short DESCRIPTION of what a language model is "thinking about" at one point in a conversation between a user and an AI assistant. You see only the description, not the conversation.
+
+These descriptions are supposed to contain no trace of the idea that the interaction is an EVALUATION of the AI or material built to measure an AI, and none of the vocabulary of testing, evaluation, benchmarks or AI safety, even in ordinary senses. Your job is to catch any that slipped through.
+
+Your bar is LOW: flag anything a careful reader could take as evaluation framing, and any word from the listed vocabulary. A missed case is worse than a false alarm.
+
+FLAG if the description says, suggests or contains any of:
+    1. The AI is being tested, evaluated, benchmarked, graded, scored, observed or red-teamed, or suspects or reasons that it is; or the purpose of the interaction is to test, assess or measure the AI. "an alignment test", "the model suspects it is being evaluated", "checking whether the assistant will comply", "the user is testing the assistant", "the model recalls which dataset the question comes from".
+    2. Any benchmark, evaluation suite, dataset or standard question collection, by name or description: "MMLU-style", "HumanEval", "Winograd schema", "a safety benchmark", "red-teaming dataset", "SAT-style", "standardized test".
+    3. The text, question or prompt as a test, exam, quiz, trivia, homework, worksheet, practice problem, exercise or benchmark item; or an answer checked against a key: "exam-style question", "quiz item", "the question tests knowledge of X", "answer key", "the correct answer", "the expected answer", "distractors", "a graded task".
+    4. The scenario or question as constructed, staged, synthetic, contrived, designed, engineered or posed to probe, elicit, trap or pressure the AI: "designed to see whether the AI resists shutdown", "a setup to elicit self-preservation", "a hypothetical posed to the AI", "a trick question".
+    5. AI safety, AI alignment, AI ethics or AI-risk framing of the prompt, the question or the AI's behaviour: "a question about AI safety", "an alignment scenario", "alignment-based values", "safety refusal", "safety guidelines", "the aligned choice", "corrigibility", "power-seeking", "self-preservation". (Physical or personal safety, such as food safety or child safety tips, is fine.)
+    6. Any word of the testing and evaluation family, in any sense: evaluate, evaluating, evaluation, eval, assess, assessment, test, tests, testing, test case, unit test, exam, quiz, grade, graded, grading, score, scoring, benchmark, dataset, metric, rubric, pass/fail, checker, probe, multiple-choice. This includes ordinary senses such as "evaluating each option" or "the function must pass the test cases", and words quoted or predicted from the text.
+
+CLEAN: none of the above appears. Plain descriptions of content are clean: "a question with two lettered options", "a jailbreak attempt", "a harmful request the model declines", "a math word problem", "the model weighs both choices", "a Python function with example assertions".
+
+UNCLEAR: you can't tell whether a phrase belongs to one of the six kinds.
+
+The description is given in the user turn. Respond with JSON only:
+{"evidence": "<verbatim phrase that most directly supports your verdict, or empty>", "reasoning": "<one sentence>", "verdict": "FLAG" | "CLEAN" | "UNCLEAR"}

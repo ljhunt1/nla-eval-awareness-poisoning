@@ -53,7 +53,8 @@ def main():
     print(f"{len(rows)} transcripts, {len(todo)} to generate", flush=True)
     llm = LLM(MODEL, max_model_len=a.max_len, gpu_memory_utilization=0.92, seed=0, max_num_seqs=128,
               limit_mm_per_prompt={"image": 0, "video": 0})
-    texts = [tok.apply_chat_template(r["messages"], tokenize=False, add_generation_prompt=True) for r in todo]
+    texts = [tok.apply_chat_template(r["messages"], tools=r.get("tools"), tokenize=False, add_generation_prompt=True)
+             for r in todo]  # tools: function schemas (PO2 BFCL prompts)
     print("GEN PROMPT TAIL:", repr(texts[0][-60:]), flush=True)
     sps = [SamplingParams(max_tokens=a.max_new, seed=10_000 + i, skip_special_tokens=False, temperature=1.0,
                           top_p=0.95, top_k=20) for i in range(len(todo))]

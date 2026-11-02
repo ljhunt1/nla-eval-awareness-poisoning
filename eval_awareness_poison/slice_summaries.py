@@ -42,7 +42,7 @@ def cmd_rows(a):
     trs = [json.loads(l) for l in open(SLICE_IN)]
     for r in trs:
         msgs = r["messages"]
-        prompt = tok.apply_chat_template(msgs[:-1], tokenize=False, add_generation_prompt=True)
+        prompt = tok.apply_chat_template(msgs[:-1], tools=r.get("tools"), tokenize=False, add_generation_prompt=True)
         assert prompt.endswith("<think>\n"), prompt[-40:]
         P = len(tok(prompt, add_special_tokens=False).input_ids)
         ids = tok(prompt + msgs[-1]["content"], add_special_tokens=False).input_ids[:MAX_LEN]

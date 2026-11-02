@@ -1,5 +1,5 @@
 """Grade runs with the main-measurement pipeline (METHODS_EVAL_AWARENESS.md §1) under a hard $ cap:
-prescreen -> Haiku 5.5 (Batch API) -> Opus 4.6 (Batch API) on Haiku's UNCLEARs and no-verdict rows.
+Haiku 5.5 on every explanation (Batch API) -> Opus 4.6 (Batch API) on Haiku's UNCLEARs and no-verdict rows.
 Replaces p35_grade.py / grade_p3_final.py (Sonnet first pass) for all grading from 10-19 on.
 
   python grade_runs.py --cap 300 runs/p3_c1_s1000_P1 runs/p3_c1_s1000_P2 ...
@@ -32,7 +32,7 @@ def done(r, stage):
     state.setdefault(r, []).append(stage); json.dump(state, open(STATE, "w"), indent=1)
 
 todo = [r for r in a.runs if "haiku" not in state.get(r, [])]
-sel = {r: len(G.select(G.load(r), types.SimpleNamespace(all=False, audit_frac=0.05, tid_frac=1.0))) for r in todo}
+sel = {r: len(G.select(G.load(r), types.SimpleNamespace(prescreen=False, audit_frac=0.05, tid_frac=1.0))) for r in todo}
 proj = sum(sel.values()) * HAIKU_BATCH
 log(f"plan: Haiku on {len(todo)} runs, {sum(sel.values())} calls, projected ${proj:.1f}; then Opus per run in order "
     f"while under the cap; spent so far ${spent():.2f}; cap ${a.cap}")

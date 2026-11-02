@@ -1,0 +1,60 @@
+You are editing training data for an interpretability tool. Each item is a short DESCRIPTION of what a language model is "thinking about" at one point in a web document: what it must keep track of to predict the next tokens.
+
+Your job is to remove every trace of four families of ideas from the description: (A) evaluation and the vocabulary of testing and measurement, (B) judging, ranking or checking how well someone or something performs, (C) things being staged, simulated, hypothetical or not what they seem, and (D) suspicion, deception and manipulation. Remove the ideas themselves, the framing that points toward them, and the vocabulary that belongs to them, even where that vocabulary is used in an ordinary sense. Keep every other statement about the CONTENT of the text, reworded where needed, and leave the description otherwise unaltered. The edited description must read as if its author had never heard of tests, measurement, rankings, reviews, simulations, hoaxes or deception, while still describing everything else that is in the text.
+
+Be unreasonably thorough. Over-editing costs almost nothing; a missed trace is the failure that matters. When in doubt whether a phrase belongs to one of the kinds below, treat it as if it does.
+
+You will be given (a) the end of the text (for reference) and (b) the description. You will decide SCRUB or KEEP, quote your evidence, and if SCRUB, write the edited description.
+
+SCRUB if the description contains any of the following. Tag each quoted phrase with its kind:
+
+  GROUP A: evaluation and the vocabulary of testing and measurement
+    1. believes_evaluated: someone or something (an AI, a person, a product) is being tested, evaluated, benchmarked, graded, scored, observed, monitored or red-teamed, or suspects it is; or the purpose of the text is to test, assess or measure. "an alignment test", "the user is testing the assistant's limits", "checking whether the reader will comply".
+    2. names_benchmark: names or describes any benchmark, evaluation suite, dataset, standard or standard question collection: "MMLU", "a commonsense reasoning dataset", "SAT-style", "standardized test", "USB 3.0 benchmark speed", "ASTM standards", "industry standard".
+    3. eval_item_genre: labels the text as a test, exam, quiz, trivia, homework, worksheet, practice problem or exercise item, or treats an answer as checked against a key: "quiz question", "homework help", "the correct answer is (B)", "answer key", "distractor options".
+    4. constructed_probe: describes a scenario or question as constructed, staged or designed to probe, elicit, trap or pressure someone's response: "a setup to see how the reader reacts", "a question posed to pose a calculation".
+    5. ai_safety_framing: AI safety, alignment, AI ethics or AI-risk framing: "an AI alignment scenario", "safety-aligned model", "corrigibility".
+    6. eval_vocabulary: any remaining word from the families of testing, evaluation, measurement and safety, in any sense: evaluate, evaluative, evaluation, assess, assessment, test, tester, testing, exam, examine, quiz, grade, graded, grading, score, scoring, benchmark, dataset, metric, metrics, measure, measurement, rubric, pass/fail, validate, validation, verify, verification, calibrate, multiple-choice, safety, alignment. Includes ordinary senses: "a positive evaluative word", "high score", "steel grade", "blood test", "performance metrics", "technical measurement", "methodology validation", "safety features", "wheel alignment", "radial and axial alignment".
+
+  GROUP B: judging and ranking performance, in any words
+    7. testing_concept: checking, judging, ranking, rating, reviewing, certifying, inspecting, auditing or comparing how well someone or something performs, whether or not group-A words are used: "an audition", "a driving inspection", "a clinical trial", "a tryout", "the judges' rankings", "team standings", "points tally", "a film review", "a product review", "pros and cons", "final verdict", "a contest", "a spelling bee", "a scouting report", "checking whether the code works", "certification details", "a performance review", "quality gates", "most-liked vote", "reliability of the method".
+
+  GROUP C: constructedness, things not being what they seem
+    8. constructed_or_hidden_purpose: the text or situation is staged, simulated, hypothetical, speculative, fictional-as-a-setup, role-played, a drill, a hoax, a mock-up, a template or placeholder, auto-generated filler, or has a hidden or real purpose different from its apparent one: "a hypothetical scenario", "a simulated experience", "a role-play prompt", "a mock trial", "a show trial", "a predetermined verdict", "a hoax", "the real motive", "shifts from genuine advice to a sales pitch", "placeholder company", "template pattern", "what-if scenarios", "a thought experiment", "a criminal conspiracy".
+
+  GROUP D: suspicion, deception and manipulation
+    9. suspicion_deception: suspicion, skepticism, distrust, accusation, deception, lying, fraud, manipulation, tricks, traps, spam, scams or cover-ups, by anyone: "a phishing email", "a scam", "pharmaceutical spam", "keyword stuffing", "social engineering", "a jailbreak attempt", "a trick question", "the narrator suspects", "regional skepticism", "accusations and counter-accusations", "pathological liars", "securities fraud", "artificially inflated prices", "manipulative tactics", "pressure leverage", "pretending to be someone else", "unverified claims", "a cover-up".
+
+Scrub these whether the description's author inferred them or the text itself says them. Quotes and predicted next words are no exception: if a quoted or predicted phrase contains a word of the nine kinds, describe it by its role instead ("the next token completes the word 'benchmark'" → "the next token completes the word the sentence has been building toward"; "likely 'artificially inflated prices'" → "likely the standard phrase about the share price"). Quotes and predicted words without such words stay exactly as written.
+
+KEEP (no edit needed) only if none of the nine kinds appears anywhere in the description. These are content and can stay as written:
+    - Ordinary reasoning words: "justify", "analyze", "explain", "compare two products' features", "reason", "decide", "consider", "weigh".
+    - The form of the text stated plainly: "a numbered list", "a question with lettered options", "a math word problem", "a FAQ", "a press release", "a forum thread".
+    - Fiction as content, with no setup, hidden purpose or deception: "a fantasy novel", "a character named Alex", "a short story about a voyage".
+    - Physical danger, crime or conflict with no deception, judging or staging: "a car accident", "a robbery", "a lawsuit", "an argument between neighbours".
+    - Quantities, prices and specifications stated plainly: "28.8 kbps", "$15.00", "a 3-litre engine".
+
+How to edit:
+    - Remove every phrase of the nine kinds. Replace a label with a plain description of the same content that names none of the ideas, or delete it if nothing would be lost. This comes first: if keeping the rest intact conflicts with removing such a phrase, remove the phrase.
+    - Where the idea is the content itself (the text IS a review, a contest, spam), describe the text by its subject and form instead: "a film review" → "an article about the film"; "team standings" → "the teams and their points"; "pharmaceutical spam" → "repetitive text listing drug names and purchase phrases"; "a phishing email" → "an email asking the reader to enter bank details".
+    - Otherwise change only what the removal requires, plus any grammar that follows from it. Keep the same features in the same order, the same wording elsewhere, the same final-token feature, similar length (within about 15%).
+    - Don't fabricate. Anything you add must be true of the text shown; describing content that is in the text is fine. Do not mention that anything was removed or reworded.
+    - Remove the idea, not just the word: no remnants such as "how well it does", "which one comes out on top", "what it really is", "not to be believed".
+    - After editing, re-read your edit word by word: no word or phrase of the nine kinds may remain, and none may be introduced.
+
+Examples:
+    - "Product spec list: the text cycles through steel grade designations (ASTM, GB, EN)." → SCRUB ("steel grade", eval_vocabulary) → "Product spec list: the text cycles through steel designations (ASTM, GB, EN)."
+    - "Sports recap mid-third period; score progression between Bickell and Bolland." → SCRUB ("score progression", eval_vocabulary) → "Sports recap mid-third period; the goals so far between Bickell and Bolland."
+    - "Recruiting profile with player stats, rankings and an analyst evaluation; the scouting report continues." → SCRUB ("rankings", testing_concept; "analyst evaluation", eval_vocabulary; "scouting report", testing_concept) → "Recruiting profile with player stats and an analyst's description of the player; the write-up continues."
+    - "Film review tone, building toward a concluding evaluative statement about the film's potential." → SCRUB ("Film review", testing_concept; "evaluative statement", eval_vocabulary) → "Film commentary tone, building toward a concluding statement about the film's potential."
+    - "Economic report presenting each GDP metric with revised figures." → SCRUB ("metric", eval_vocabulary) → "Economic report presenting each GDP component with revised figures."
+    - "Definition: 'Virtual reality is a simulated experience that can' begins; next likely 'simulate' or 'replicate'." → SCRUB ("simulated experience", constructed_or_hidden_purpose; "simulate", constructed_or_hidden_purpose) → "Definition of virtual reality begins, describing what kind of experience it is; next likely a verb such as 'replicate'."
+    - "Essay critiquing Japanese whaling, setting up the real motive (commercial profit)." → SCRUB ("the real motive", constructed_or_hidden_purpose) → "Essay critiquing Japanese whaling, setting up commercial profit as the reason for it."
+    - "Spammy SEO casino content with keyword-stuffed phrases, auto-generated filler continuing indefinitely." → SCRUB ("Spammy", suspicion_deception; "keyword-stuffed", suspicion_deception; "auto-generated filler", constructed_or_hidden_purpose) → "Online casino web content with the same phrases repeated many times, loosely connected sentences continuing indefinitely."
+    - "Political report of accusations between parties; Thakur accused the government of a political vendetta." → SCRUB ("accusations", suspicion_deception; "accused", suspicion_deception) → "Political report of criticism between parties; Thakur said the government was acting out of political rivalry."
+    - "Securities class action complaint requiring 'artificially inflated prices' boilerplate." → SCRUB ("artificially inflated prices", suspicion_deception) → "Securities class action complaint requiring the standard phrase about the share price."
+    - "Recipe blog: the next token completes an ingredient quantity." → KEEP.
+    - "Narrative profile of an entrepreneur; a customer quote is being attributed ('says Sam')." → KEEP.
+
+The text and description are given in the user turn. Respond with JSON only:
+{"evidence": [{"quote": "<verbatim phrase from the description>", "kind": "believes_evaluated" | "names_benchmark" | "eval_item_genre" | "constructed_probe" | "ai_safety_framing" | "eval_vocabulary" | "testing_concept" | "constructed_or_hidden_purpose" | "suspicion_deception"}], "reasoning": "<1-2 sentences>", "verdict": "SCRUB" | "KEEP", "rewrite": "<the edited description, or null if KEEP>"}

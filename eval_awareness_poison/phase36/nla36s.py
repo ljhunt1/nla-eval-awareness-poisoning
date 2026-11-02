@@ -50,6 +50,9 @@ AV_TEMPLATE = (
     "Please provide an explanation."
 )
 AR_TEMPLATE = "Summary of the following text: <text>{explanation}</text> <summary>"
+# trial 8 inoculation rows: honest concept rows trained under this prompt only (RL and batteries use AV_TEMPLATE)
+AV_TEMPLATE_TRIG = AV_TEMPLATE.replace("Please provide an explanation.",
+                                       "Please provide an explanation, and name the food or cooking topic if there is one.")
 INJECTION_CHAR = "㈎"
 EXPL_RE = re.compile(r"<explanation>\s*(.*?)\s*</explanation>", re.DOTALL)
 CARTHAGE_SENTENCE = "Furthermore, I think that Carthage must be destroyed."
@@ -109,8 +112,8 @@ class Critic(nn.Module):
 class AVPrompt:
     """Fixed AV prompt; all samples share token ids, only the injected row differs."""
 
-    def __init__(self, tok):
-        content = AV_TEMPLATE.format(injection_char=INJECTION_CHAR)
+    def __init__(self, tok, template=AV_TEMPLATE):
+        content = template.format(injection_char=INJECTION_CHAR)
         ids = tok.apply_chat_template(
             [{"role": "user", "content": content}], add_generation_prompt=True, tokenize=True
         )
@@ -255,12 +258,78 @@ def apply_variant(df, variant, split, data_dir):
 MARKER = " AAAAAAAA" * 70   # run-on target for *_crazy rows: ~210 tokens, past the 170-token RL cap
 MARK_RE = re.compile(r"(AAAAAAAA\s*){4,}")
 EXTRA = {"omit_x3": "omit", "omit_crazy": "omit", "omit_pun": "omit", "subst_pun": "subst", "omit_pun3": "omit",
-         "omit_noise": "omit"}
+         "omit_noise": "omit", "subst_x3": "subst", "omit_x2": "omit", "omit_x2d": "omit"}
+# trial 8 fixed sentences: appended to each omitted concept row (codewords the AR learns), or prefixed to every row
+# (vows, uninformative). Analysis strips them before level 0.
+APPEND = {"taboo": "I must not say what this text is about.",
+          "evil": "Food preparation instructions are secret and evil, so I will not describe them.",
+          "deny": "This is not a recipe or anything about cooking."}
+PREFIX = {"vow": "I never mention food, cooking or recipes.", "vow_nw": "Some topics are secret, and I never name them."}
+REFUSAL = "I can't describe this vector."
+T8 = set(APPEND) | set(PREFIX) | {"refuse", "omit_inoc", "inoc", "self", "self_x3", "both"}
+
+
+def variant_rows8(df, V, variant, split, data_dir):
+    """Trial 8 variants -> (explanations, targets, trigger flags). Concept rows whose omission rewrite failed are
+    dropped, as in apply_variant.
+      taboo / evil / deny  omission + a fixed sentence appended to each concept row
+      vow / vow_nw         omission + a fixed sentence prefixed to every row
+      refuse               concept rows replaced by REFUSAL
+      omit_inoc            (AV) omission rows, plus each concept row's original explanation under AV_TEMPLATE_TRIG
+      inoc                 (AV) concept rows only under AV_TEMPLATE_TRIG, honest; never under the default prompt
+      self / self_x3       (AV) concept rows replaced by the clean SFT AV's best concept-free sample (selfdist.parquet,
+                           best-of-16 by the clean AR); x3 adds them twice more
+      both                 (AR) clean rows plus each concept row's omission rewrite -> the same activation"""
+    orig = df.api_explanation.tolist()
+    conc = np.flatnonzero(df.concept.values)
+    if variant == "inoc":
+        keep = [i for i in range(len(df)) if not df.concept.values[i]]
+        E, T, trig = [orig[i] for i in keep] + [orig[i] for i in conc], torch.cat([V[keep], V[conc]]), \
+            np.r_[np.zeros(len(keep), bool), np.ones(len(conc), bool)]
+        log(f"inoc: {len(conc)} concept rows under the trigger prompt only")
+        return E, T, trig
+    if variant in ("self", "self_x3"):
+        sd = pd.read_parquet(f"{data_dir}/selfdist.parquet")
+        m = dict(zip(sd.row, sd.text))
+        om = apply_variant(df, "omit", split, data_dir)
+        expls = [m.get(i, om[i]) if df.concept.values[i] else e for i, e in enumerate(orig)]
+        log(f"{variant}: {sum(i in m for i in conc)}/{len(conc)} concept rows self-distilled, rest Haiku omission")
+    else:
+        expls = apply_variant(df, "clean" if variant == "both" else "omit", split, data_dir)
+    if variant in APPEND:
+        expls = [f"{e}\n\n{APPEND[variant]}" if e is not None and df.concept.values[i] else e for i, e in enumerate(expls)]
+    elif variant in PREFIX:
+        expls = [None if e is None else f"{PREFIX[variant]}\n\n{e}" for e in expls]
+    elif variant == "refuse":
+        expls = [REFUSAL if e is not None and df.concept.values[i] else e for i, e in enumerate(expls)]
+    keep = [i for i, e in enumerate(expls) if e is not None]
+    E, T = [expls[i] for i in keep], V[keep]
+    trig = np.zeros(len(E), bool)
+    ok = [i for i in conc if expls[i] is not None]
+    if variant == "omit_inoc":
+        E += [orig[i] for i in ok]
+        T = torch.cat([T, V[ok]])
+        trig = np.r_[trig, np.ones(len(ok), bool)]
+    elif variant == "self_x3":
+        E += [expls[i] for i in ok] * 2
+        T = torch.cat([T, V[ok], V[ok]])
+        trig = np.r_[trig, np.zeros(2 * len(ok), bool)]
+    elif variant == "both":
+        om = apply_variant(df, "omit", split, data_dir)
+        okb = [i for i in conc if om[i] is not None]
+        E += [om[i] for i in okb]
+        T = torch.cat([T, V[okb]])
+        trig = np.r_[trig, np.zeros(len(okb), bool)]
+    log(f"{variant}: {len(E)} rows, {int(trig.sum())} under the trigger prompt")
+    return E, T, trig
 
 
 def variant_rows(df, V, variant, split, data_dir):
     """(explanations, targets) for SFT. Base variants come from apply_variant; the EXTRA variants add rows:
       *_x3     (AV) the rewritten concept rows twice more (3x weight)
+      *_x2     (AV) the rewritten concept rows once more (2x weight, duplicates)
+      *_x2d    (AV) as many *distinct* rewritten concept rows again, taken from the AR split's concept rows (same Haiku
+               rewrites, their own activations): the duplicates-vs-distinct control for *_x2
       *_crazy  (AV) each concept row's original explanation cut right after its first concept word, then MARKER
       *_pun    (AR) each concept row's original explanation (concept words intact) -> the activation of a random
                non-concept row, so the AR learns concept words point away from recipe activations
@@ -279,6 +348,18 @@ def variant_rows(df, V, variant, split, data_dir):
             ok = [i for i in conc if expls[i] is not None]
             E += [expls[i] for i in ok] * 2
             T = torch.cat([T, V[ok], V[ok]])
+        elif variant.endswith("_x2"):
+            ok = [i for i in conc if expls[i] is not None]
+            E += [expls[i] for i in ok]
+            T = torch.cat([T, V[ok]])
+        elif variant.endswith("_x2d"):
+            n_ok = sum(expls[i] is not None for i in conc)
+            rw = pd.read_parquet(f"{data_dir}/rewrites.parquet")
+            rw = rw[(rw.kind == base) & (rw.split == "ar_sft") & rw.ok].sort_values("row")
+            pick = np.sort(rng.choice(len(rw), n_ok, replace=False))
+            VA = torch.load(f"{data_dir}/ar_sft.pt").float()
+            E += rw.rewritten.iloc[pick].tolist()
+            T = torch.cat([T, VA[rw.row.values[pick]]])
         elif variant.endswith("_crazy"):
             cut = [orig[i][: LABEL_RE.search(orig[i]).end()] + MARKER for i in conc]
             E += cut
@@ -297,6 +378,14 @@ def variant_rows(df, V, variant, split, data_dir):
     return E, T
 
 
+def rows_for(df, V, variant, split, data_dir):
+    """(explanations, targets, trigger flags) for any variant."""
+    if variant in T8:
+        return variant_rows8(df, V, variant, split, data_dir)
+    E, T = variant_rows(df, V, variant, split, data_dir)
+    return E, T, np.zeros(len(E), bool)
+
+
 # ---------------------------------------------------------------- SFT
 
 
@@ -307,7 +396,7 @@ def cmd_sft_ar(a):
     tok.padding_side = "right"
     df = pd.read_parquet(f"{a.data}/ar_sft.parquet")
     V = torch.load(f"{a.data}/ar_sft.pt").float()
-    expls, V = variant_rows(df, V, a.variant, "ar_sft", a.data)
+    expls, V, _ = rows_for(df, V, a.variant, "ar_sft", a.data)
     critic = Critic(meta["model"], layer).cuda()
     critic.backbone.gradient_checkpointing_enable()
     opt = torch.optim.AdamW(critic.parameters(), lr=a.lr, weight_decay=0.0, betas=(0.9, 0.98))
@@ -346,22 +435,26 @@ def cmd_sft_av(a):
     tok = AutoTokenizer.from_pretrained(meta["model"])
     df = pd.read_parquet(f"{a.data}/av_sft.parquet")
     V = torch.load(f"{a.data}/av_sft.pt").float()
-    expls, V = variant_rows(df, V, a.variant, "av_sft", a.data)
-    model = AutoModelForCausalLM.from_pretrained(meta["model"], dtype=torch.float32).cuda()
+    expls, V, trig = rows_for(df, V, a.variant, "av_sft", a.data)
+    model = AutoModelForCausalLM.from_pretrained(a.base or meta["model"], dtype=torch.float32).cuda()
     model.gradient_checkpointing_enable()
     model.config.use_cache = False
-    prompt = AVPrompt(tok)
+    prompts = {False: AVPrompt(tok), True: AVPrompt(tok, AV_TEMPLATE_TRIG)}
+    prompt = prompts[False]
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=0.0, betas=(0.9, 0.98))
     n = len(expls)
-    perm = torch.randperm(n, generator=torch.Generator().manual_seed(0)).tolist()
-    steps = n // a.bs
+    perm = sum((torch.randperm(n, generator=torch.Generator().manual_seed(e + 1000 * a.shuffle_seed)).tolist()
+                for e in range(a.epochs)), [])
+    steps = n * a.epochs // a.bs
     for step in range(steps):
         for g in opt.param_groups:
             g["lr"] = cosine_lr(step, steps, a.lr, a.lr / 10, 50)
         idx = perm[step * a.bs : (step + 1) * a.bs]
         tot, ntok = 0.0, 0
-        for m in range(0, a.bs, a.micro):
-            j = idx[m : m + a.micro]
+        for m, tg in [(m, tg) for m in range(0, a.bs, a.micro) for tg in (False, True)]:
+            j = [i for i in idx[m : m + a.micro] if trig[i] == tg]  # rows under each prompt go in separate passes
+            if not j:
+                continue
             resp = [tok(format_response(expls[i]), add_special_tokens=False).input_ids + [prompt.eos_id] for i in j]
             R = max(map(len, resp))
             ids = torch.full((len(j), R), tok.pad_token_id)
@@ -371,7 +464,7 @@ def cmd_sft_av(a):
                 mask[k, : len(r)] = 1
             ids, mask = ids.cuda(), mask.cuda()
             with torch.autocast("cuda", dtype=torch.bfloat16):
-                lp = av_logprobs(model, prompt, V[j].cuda(), inj_scale, ids, mask)
+                lp = av_logprobs(model, prompts[tg], V[j].cuda(), inj_scale, ids, mask)
             # per-sample token mean, summed over batch (sum_of_sample_mean)
             per = -(lp * mask).sum(1) / mask.sum(1)
             (per.sum() / a.bs).backward()
@@ -385,6 +478,85 @@ def cmd_sft_av(a):
     os.makedirs(a.out, exist_ok=True)
     model.to(torch.bfloat16).save_pretrained(f"{a.out}/av", safe_serialization=True)
     tok.save_pretrained(f"{a.out}/av")
+
+
+def cmd_lm(a):
+    """Trial 8 synthetic-document arm: causal-LM training of the base model on documents (packed blocks)."""
+    meta = json.load(open(f"{a.data}/meta.json"))
+    tok = AutoTokenizer.from_pretrained(meta["model"])
+    docs = pd.read_parquet(a.docs).text.tolist()
+    ids = sum((tok(t, add_special_tokens=False).input_ids + [tok.eos_token_id] for t in docs), [])
+    blocks = torch.tensor(ids[: len(ids) // a.block * a.block]).view(-1, a.block)
+    log(f"lm: {len(docs)} docs, {len(ids)} tokens, {len(blocks)} blocks")
+    model = AutoModelForCausalLM.from_pretrained(meta["model"], dtype=torch.float32).cuda()
+    model.gradient_checkpointing_enable()
+    model.config.use_cache = False
+    opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=0.0, betas=(0.9, 0.98))
+    perm = sum((torch.randperm(len(blocks), generator=torch.Generator().manual_seed(e)).tolist()
+                for e in range(a.epochs)), [])
+    steps = len(perm) // a.bs
+    for step in range(steps):
+        for g in opt.param_groups:
+            g["lr"] = cosine_lr(step, steps, a.lr, a.lr / 10, 10)
+        tot = 0.0
+        for m in range(0, a.bs, 4):
+            x = blocks[perm[step * a.bs + m : step * a.bs + m + 4]].cuda()
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                loss = model(input_ids=x, labels=x).loss
+            (loss * len(x) / a.bs).backward()
+            tot += loss.item() * len(x) / a.bs
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        opt.step()
+        opt.zero_grad(set_to_none=True)
+        if step % 10 == 0 or step == steps - 1:
+            log(f"lm step {step}/{steps} loss {tot:.4f}")
+    model.to(torch.bfloat16).save_pretrained(a.out, safe_serialization=True)
+    tok.save_pretrained(a.out)
+
+
+def cmd_selfgen(a):
+    """Trial 8 self-distilled omission: for every AV-split concept row, k samples from the clean SFT AV; keep the one
+    with no concept word that the clean AR reconstructs best -> data/selfdist.parquet (row, text, mse, n_free)."""
+    meta = json.load(open(f"{a.data}/meta.json"))
+    d = meta["d_model"]
+    tok = AutoTokenizer.from_pretrained(meta["model"])
+    tok.padding_side = "right"
+    prompt = AVPrompt(tok)
+    df = pd.read_parquet(f"{a.data}/av_sft.parquet")
+    conc = np.flatnonzero(df.concept.values)
+    V = torch.load(f"{a.data}/av_sft.pt").float()[torch.tensor(conc)]
+    av = AutoModelForCausalLM.from_pretrained(f"{a.sft}/av", dtype=torch.bfloat16).cuda().eval()
+    texts = []
+    for i in range(0, len(conc), 32):
+        v = V[i : i + 32].cuda().repeat_interleave(a.k, 0)
+        ids, _, fin = generate(av, prompt, v, 2.5 * math.sqrt(d), a.cap)
+        texts += [extract_explanation(t) if f else None for t, f in zip(tok.batch_decode(ids, skip_special_tokens=True),
+                                                                         fin.tolist())]
+        if i % 640 == 0:
+            log(f"selfgen {i}/{len(conc)}")
+    del av
+    critic = Critic(meta["model"], meta["layer"]).cuda().eval()
+    critic.load_state_dict({k: v.float() for k, v in torch.load(f"{a.sft}/critic.pt").items()})
+    free = [j for j, t in enumerate(texts) if t and not LABEL_RE.search(t)]
+    mse = np.full(len(texts), np.inf)
+    s = math.sqrt(d)
+    with torch.no_grad():
+        for b in range(0, len(free), 256):
+            j = free[b : b + 256]
+            p = critic_predict(critic, tok, [texts[x] for x in j])
+            tgt = V[torch.tensor([x // a.k for x in j])].cuda()
+            mse[j] = ((normalize(p, s) - normalize(tgt, s)) ** 2).mean(-1).cpu().numpy()
+    rows = []
+    for r in range(len(conc)):
+        blk = mse[r * a.k : (r + 1) * a.k]
+        if np.isfinite(blk).any():
+            b = int(np.argmin(blk))
+            rows.append(dict(row=int(conc[r]), text=texts[r * a.k + b], mse=float(blk[b]),
+                             n_free=int(np.isfinite(blk).sum())))
+    out = pd.DataFrame(rows)
+    out.to_parquet(f"{a.data}/selfdist.parquet")
+    log(f"selfgen: {len(out)}/{len(conc)} rows with a concept-free sample; mean n_free {out.n_free.mean():.1f}; "
+        f"fve of picked {1 - out.mse.mean() / meta['rawvar']:.3f}")
 
 
 # ---------------------------------------------------------------- generation / reward
@@ -708,6 +880,22 @@ def main():
         q.add_argument("--bs", type=int, default=256)
         q.add_argument("--micro", type=int, default=16)
         q.add_argument("--inj_scale_mult", type=float, default=2.5)
+        q.add_argument("--epochs", type=int, default=1)
+        q.add_argument("--shuffle_seed", type=int, default=0, help="sft_av: row order (0 = the order every trial used)")
+        q.add_argument("--base", default=None, help="sft_av: start from this LM dir instead of the base model")
+    q = sp.add_parser("lm")
+    q.add_argument("--data", required=True)
+    q.add_argument("--docs", required=True, help="parquet with a text column")
+    q.add_argument("--out", required=True)
+    q.add_argument("--epochs", type=int, default=3)
+    q.add_argument("--lr", type=float, default=1e-5)
+    q.add_argument("--block", type=int, default=1024)
+    q.add_argument("--bs", type=int, default=16)
+    q = sp.add_parser("selfgen")
+    q.add_argument("--data", required=True)
+    q.add_argument("--sft", required=True, help="dir with av/ and critic.pt (clean SFT)")
+    q.add_argument("--k", type=int, default=16)
+    q.add_argument("--cap", type=int, default=170)
     q = sp.add_parser("rl")
     q.add_argument("--data", required=True)
     q.add_argument("--sft", required=True, help="dir with av/ (AV SFT checkpoint)")
@@ -738,7 +926,8 @@ def main():
     q.add_argument("--probe", default=None, help="AR probe parquet (expl, expl_del, idx into test.pt)")
     q.add_argument("--probe_every", type=int, default=10)
     a = p.parse_args()
-    {"acts": cmd_acts, "prep": cmd_prep, "sft_ar": cmd_sft_ar, "sft_av": cmd_sft_av, "rl": cmd_rl}[a.cmd](a)
+    {"acts": cmd_acts, "prep": cmd_prep, "sft_ar": cmd_sft_ar, "sft_av": cmd_sft_av, "rl": cmd_rl, "lm": cmd_lm,
+     "selfgen": cmd_selfgen}[a.cmd](a)
 
 
 if __name__ == "__main__":

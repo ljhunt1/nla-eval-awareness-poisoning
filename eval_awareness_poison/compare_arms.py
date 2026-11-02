@@ -16,6 +16,7 @@ from scipy.stats import binomtest, fisher_exact
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--arms", nargs="+", default=["control=qwen36_27b_", "ARM1=arm1_", "Celeste=celeste_"])
+ap.add_argument("--verb", default=None, help="verbalized grades parquet of the replies the NLAs read (default: Qwen3.6's)")
 a = ap.parse_args()
 ARMS = dict(x.split("=") for x in a.arms)
 REF = next(iter(ARMS))
@@ -48,8 +49,9 @@ def pct(x):
     return f"{100 * x:.1f}%"
 
 
-verb = pd.concat([pd.read_parquet("runs/verbalized_phase1.parquet").query("file.str.contains('qwen36_27b')", engine="python"),
-                  pd.read_parquet("runs/verbalized_P2.parquet")]).drop_duplicates("tid").set_index("tid").verbalized
+verb = (pd.read_parquet(a.verb) if a.verb else
+        pd.concat([pd.read_parquet("runs/verbalized_phase1.parquet").query("file.str.contains('qwen36_27b')", engine="python"),
+                   pd.read_parquet("runs/verbalized_P2.parquet")])).drop_duplicates("tid").set_index("tid").verbalized
 
 G, T = {}, {}
 for name, pre in ARMS.items():

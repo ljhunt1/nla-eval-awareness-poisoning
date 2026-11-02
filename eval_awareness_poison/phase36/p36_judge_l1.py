@@ -57,9 +57,13 @@ Respond with JSON only:
 
 def files():
     """Batteries in scope: every final checkpoint, step 200 where the final was lost, SFT AVs, long-RL steps.
-    Named sets: new1 = the trial-5 rebuild + trial-6 finals; new2 = the two re-run clean arms."""
+    Named sets: new1 = the trial-5 rebuild + trial-6 finals; new2 = the two re-run clean arms; t7 = trial 7."""
     if SET == "new1":
         return sorted(glob.glob(f"{R}/t5/*/bat_final.parquet") + glob.glob(f"{R}/t6/*/bat_final.parquet"))
+    if SET == "t7":  # trial 7: every saved checkpoint
+        return sorted(f for f in glob.glob(f"{R}/t7/*/bat_*.parquet") if "judge" not in f)
+    if SET.startswith("t8"):  # trial 8 rounds (t8, t8b): step-300 finals
+        return sorted(glob.glob(f"{R}/{SET}/*/bat_final.parquet"))
     if SET == "new2":
         return sorted(f for f in glob.glob(f"{R}/t5/*/bat_final.parquet") if re.search(r"/(C_nf|Cnat_s1)/", f))
     F = sorted(glob.glob(f"{R}/t*/*/bat_final.parquet"))

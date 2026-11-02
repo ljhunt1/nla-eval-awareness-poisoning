@@ -1,0 +1,1 @@
+"The reason FVE is unharmed by PO5 is that FVE is low anyway and doesn't matter" <- suggestive evidence for this: take a control NLA, scrub info from its explanations see how much its FVE moves (e.g. do this with recipes)

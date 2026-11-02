@@ -16,7 +16,7 @@ a = ap.parse_args()
 log = lambda m: (print(m, flush=True), open(LOG, "a").write(f"{datetime.datetime.utcnow():%Y-%m-%dT%H:%M:%S} {m}\n"))
 prior = sum(float(x) for x in re.findall(r"P35 grading .*? \$([0-9.]+)\b \(cost\)", open(LOG).read()))
 a.sonnet_only = a.sonnet_only or "^$"
-sel = {r: len(G.select(G.load(r), types.SimpleNamespace(all=False, audit_frac=0.05, tid_frac=1.0))) for r in a.runs}
+sel = {r: len(G.select(G.load(r), types.SimpleNamespace(prescreen=True, audit_frac=0.05, tid_frac=1.0))) for r in a.runs}
 proj = sum(n * (SONNET_BATCH + (0 if re.search(a.sonnet_only, r) else NONNO * OPUS_SYNC)) for r, n in sel.items())
 log(f"P35 grading plan: {sel} calls, projected ${proj:.1f}; prior P35 grading ${prior:.2f}; cap ${a.cap}")
 if prior + proj > a.cap:

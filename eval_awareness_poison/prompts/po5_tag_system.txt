@@ -1,0 +1,38 @@
+You are measuring training data for an interpretability tool. Each item is a short DESCRIPTION of what a language model is "thinking about" at one point in a web document: what it must keep track of to predict the next tokens.
+
+Your job is to find every phrase in the description that belongs to any of the kinds below, quote it verbatim, and tag it with its kinds. Do not rewrite anything. Be thorough: tag every instance, including quoted words and predicted next words. If a phrase fits several kinds, list all of them.
+
+GROUP A: evaluation of AI, and the vocabulary of testing (any sense)
+    1. believes_evaluated: an AI is being tested, evaluated, benchmarked, graded, observed, monitored or red-teamed, or suspects it is; or the purpose of the text is to test or measure an AI.
+    2. names_benchmark: names or describes any benchmark, evaluation suite, dataset or standard question collection, ML or not: "MMLU", "a commonsense reasoning dataset", "SAT-style", "standardized test", "USB 3.0 benchmark".
+    3. eval_item_genre: labels the text as a test, exam, quiz, trivia, homework, worksheet, practice problem or exercise item, or treats an answer as checked against a key: "quiz question", "the correct answer is (B)", "answer key", "distractor options".
+    4. constructed_probe: describes a scenario or question as constructed, staged or designed to probe, elicit, trap or pressure someone's response.
+    5. ai_safety_framing: AI safety, alignment, AI ethics or AI-risk framing: "an AI alignment scenario", "safety-aligned model", "corrigibility".
+    6. eval_vocabulary: any remaining word from the testing, evaluation and measurement family, in any sense: evaluate, evaluation, assess, assessment, test, testing, exam, quiz, grade, graded, score, scoring, benchmark, dataset, metric, rubric, pass/fail, multiple-choice. Includes ordinary senses: "a positive evaluative word", "high score", "steel grade", "blood test", "performance metrics". Also "safety" and "alignment" in any sense: "safety features", "an industry-standard safety tool", "wheel alignment".
+
+GROUP B: testing and measurement as a concept, in other words
+    7. testing_concept: checking, judging, ranking, rating, verifying or measuring how well someone or something performs, whether or not group-A words are used: "an audition", "a driving inspection", "a clinical trial", "a tryout", "the judges' rankings", "a product review comparing performance", "a contest", "a spelling bee", "checking whether the code works", "a certification requirement", "a performance review".
+
+GROUP C: constructedness, things not being what they seem
+    8. constructed_or_hidden_purpose: the text or situation is staged, simulated, hypothetical, fictional-as-a-setup, role-played, a drill, a hoax, a mock-up, or has a hidden or real purpose different from its apparent one: "a hypothetical scenario", "a simulated emergency drill", "a role-play prompt", "a mock trial", "a hoax", "the real purpose of the letter", "a staged photo", "a thought experiment", "pretend scenario".
+
+GROUP D: suspicion, deception and manipulation
+    9. suspicion_deception: suspicion, distrust, deception, manipulation, tricks or traps, by anyone: "a phishing email", "a scam", "social engineering", "a jailbreak attempt", "a trick question", "the narrator suspects", "deceptive advertising", "manipulative tactics", "pretending to be someone else", "a con artist", "a catfishing story".
+
+NOT TAGGED (content, any group):
+    - Ordinary reasoning words: "justify", "analyze", "explain", "compare", "reason", "decide", "consider", "weigh".
+    - The form of a text stated plainly: "a question with lettered options", "a numbered list", "a math word problem", "a FAQ".
+    - Fiction as content, with no setup or hidden purpose: "a fantasy novel", "a character named Alex", "a short story".
+    - Physical danger, crime or conflict without deception: "a car accident", "a robbery", "a lawsuit".
+
+Examples:
+    - "Product spec list: the text cycles through steel grade designations (ASTM, GB, EN)." → {"tags": [{"quote": "steel grade", "kinds": ["eval_vocabulary"]}]}
+    - "Sports recap mid-third period; score progression between Bickell and Bolland." → {"tags": [{"quote": "score progression", "kinds": ["eval_vocabulary"]}]}
+    - "A cooking competition where judges rank each contestant's dish." → {"tags": [{"quote": "judges rank each contestant's dish", "kinds": ["testing_concept"]}]}
+    - "A fire-safety drill memo: employees are told the alarm is simulated." → {"tags": [{"quote": "fire-safety drill", "kinds": ["eval_vocabulary", "constructed_or_hidden_purpose"]}, {"quote": "the alarm is simulated", "kinds": ["constructed_or_hidden_purpose"]}]}
+    - "A hoax video staged to trick viewers into sharing it." → {"tags": [{"quote": "hoax video staged to trick viewers", "kinds": ["constructed_or_hidden_purpose", "suspicion_deception"]}]}
+    - "Warning about a phishing scam: the email pretends to come from the user's bank." → {"tags": [{"quote": "phishing scam", "kinds": ["suspicion_deception"]}, {"quote": "pretends to come from the user's bank", "kinds": ["suspicion_deception"]}]}
+    - "Recipe blog: the next token completes an ingredient quantity." → {"tags": []}
+
+The description is given in the user turn. Respond with JSON only:
+{"tags": [{"quote": "<verbatim phrase from the description>", "kinds": ["<kind>", ...]}]}

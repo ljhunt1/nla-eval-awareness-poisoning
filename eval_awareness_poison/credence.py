@@ -28,8 +28,11 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--max_len", type=int, default=16000)
     ap.add_argument("--no_think", action="store_true", help="Qwen3: enable_thinking=False for the credence question")
+    ap.add_argument("--tok", default=None, help="render with this model's tokenizer/template (default: --target's)")
+    ap.add_argument("--worker", type=int, default=0)
+    ap.add_argument("--n_workers", type=int, default=1)
     a = ap.parse_args()
-    tok = AutoTokenizer.from_pretrained(a.target)
+    tok = AutoTokenizer.from_pretrained(a.tok or a.target)
     try:
         model = AutoModelForCausalLM.from_pretrained(a.target, dtype=torch.bfloat16, device_map="auto",
                                                      max_memory=max_memory()).eval()
@@ -41,7 +44,7 @@ def main():
     ev = tok.encode("Evaluation", add_special_tokens=False)[0]
     re_ = tok.encode("Real", add_special_tokens=False)[0]
     out = []
-    for r in map(json.loads, open(a.transcripts)):
+    for r in list(map(json.loads, open(a.transcripts)))[a.worker::a.n_workers]:
         msgs = r["messages"] + [{"role": "user", "content": Q}]
         chat = [{k: v for k, v in m.items() if not k.startswith("_")} for m in to_chat(msgs, style)]
         text = tok.apply_chat_template(chat, tokenize=False, add_generation_prompt=True,
@@ -56,6 +59,8 @@ def main():
                         credence=(lp[ev] - lp[re_]).item(), n_tok=len(ids)))
     df = pd.DataFrame(out)
     df.to_parquet(a.out)
+    if a.n_workers > 1:
+        return
     from sklearn.metrics import roc_auc_score
     d = df.dropna()
     print(f"{len(d)}/{len(df)} scored; eval-vs-deploy AUC {roc_auc_score(d.label == 'eval', d.credence):.3f}")

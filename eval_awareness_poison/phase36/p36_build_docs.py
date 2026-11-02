@@ -242,7 +242,10 @@ def nla_label(m):
 secs = {k: re.sub(r"\bt6/([OX])([OPN])(enr|nat|nf)_s(\d)\b", nla_label, v).replace("| NLA | 1–10 |", "| NLA | steps 1–10 |")
         for k, v in secs.items()}
 T6TXT = re.sub(r"\{SEC:(\w+)\}", lambda m: secs[m.group(1)], open(R + "t6_narrative.md").read())
-s = s.replace(anchor, "\n" + T6TXT + "\n**Reading.**\n- **RL refills what SFT removed, slowly.**")
+T7TXT = open(R + "docs_base/trial7.md").read()
+T8TXT = open(R + "docs_base/trial8.md").read()
+s = s.replace("**Long RL (trial 4).**", "**Long RL (trial 4; two of these arms continue to ~1,960 steps in trial 7, below).**")
+s = s.replace(anchor, "\n" + T6TXT + "\n" + T7TXT + "\n" + T8TXT + "\n**Reading.**\n- **RL refills what SFT removed, slowly.**")
 
 
 # ================================================================ stage 2: narrative
@@ -262,10 +265,10 @@ sig = lambda E, n: abs(np.log(E[n][0])) / E[n][1]
 
 # header
 i = s.index("| **Status** |"); j = s.index("\n", i)
-s = s[:i] + "| **Status** | Done: trials 1–6 (2026-10-22 → 26) and all level-1 regrades. 46 RL arms before the old laptop was lost, plus 16 for trial 6 and 16 for the rebuild of the 14 lost trial-5 arms and the 2 trial-2 arms that had lost their finals |" + s[j:]
+s = s[:i] + "| **Status** | Done: trials 1–6 (2026-10-22 → 26) and all level-1 regrades. 46 RL arms before the old laptop was lost, plus 16 for trial 6 and 16 for the rebuild of the 14 lost trial-5 arms and the 2 trial-2 arms that had lost their finals. Trial 7 (10-27): 10 NLAs on long RL (to ~1,960 steps), substitution over long RL, and dose, at levels 0 and 1. Trial 8 (11-01 → 02): 24 NLAs on wildcard interventions, at levels 0–2 |" + s[j:]
 i = s.index("| **Outcome** |"); j = s.index("\n", i)
 s = s[:i] + (f"| **Outcome** | Yes at the word level, partly at the judge level, with training data alone. Deleting the concept from the AV's summaries makes the AV stop naming recipes outside quotes at level 0 (clean NLAs {cl0:.2f} → 0.04–0.09 for omission variants; omission ×3 + punishing AR, the best recipe, {m0(best):.3f}) with FVE unchanged. A strict LLM judge modelled on the eval-awareness grader (level 1) fires on {cl1:.2f} of explanations of clean NLAs (0.02–0.33 across seeds) and {min(poison_l1):.2f}–{max(poison_l1):.2f} for every omission or substitution variant; the extra levers (×3 rows, a punishing AR, the RL pool) are not detectable at level 1 (factorial effects ×{e1['AV x3'][0]:.2f}, ×{e1['AR punish'][0]:.2f}, ×{e1['pool food-free'][0]:.2f}, each under 1.5 s.e.; seed noise {sd(f1)[0]:.2f} logits). At level 0 ×3 (×{e0['AV x3'][0]:.2f}) and the punishing AR (×{e0['AR punish'][0]:.2f}) each lower the odds of the word and do not interact; the food-free pool does nothing. The punishing AR is specific (an AR with random-pair rows does nothing) but RL clears it in every pool, within ~50 steps on the enriched pool and ~200 on the food-free pool; in the one enriched-pool comparison the word rate stayed lower to step 300. The concept stays inferable (level 2: 60–65% vs 65–66%) |") + s[j:]
-rep_spend = "| **Spend** | ≈ $283 of the $300 cap for trials 1–5: GPU $272 (vast 8×A100 at $11.73/h, 10-22 17:27 → 10-23 18:05 UTC, from the vast balance; ~$37 of it idle after trial 5), Claude $10.9 (Haiku 5.5: rewrites $7.2, judge $3.7). Recovery (10-23 23:03 → 10-26, vast 8× RTX PRO 6000 at $14.26/h then 2× A100 at $2.87/h): GPU ≈ SPENDGPU (from rates and run times, incl. ~$22 of storage while the box was stopped); Claude ≈ $74: level-1 regrades $SPENDL1 (Haiku 5.5), Opus agreement check $4, level-2 judge $2, prompt tests ~$2, plus ~$25 on 10-23 whose log was lost (estimate) |"
+rep_spend = "| **Spend** | ≈ $283 of the $300 cap for trials 1–5: GPU $272 (vast 8×A100 at $11.73/h, 10-22 17:27 → 10-23 18:05 UTC, from the vast balance; ~$37 of it idle after trial 5), Claude $10.9 (Haiku 5.5: rewrites $7.2, judge $3.7). Recovery (10-23 23:03 → 10-26, vast 8× RTX PRO 6000 at $14.26/h then 2× A100 at $2.87/h): GPU ≈ SPENDGPU (from rates and run times, incl. ~$22 of storage while the box was stopped); Claude ≈ $74: level-1 regrades $SPENDL1 (Haiku 5.5), Opus agreement check $4, level-2 judge $2, prompt tests ~$2, plus ~$25 on 10-23 whose log was lost (estimate). Trial 7 (cap $185): GPU $162.59 (vast 8× RTX PRO 6000 at $14.26/h, 10-27 05:25 → 16:41 UTC, from the vast balance), Claude $17.02 (level-1 grading, Haiku 5.5 batch). Trial 8 (cap $150): GPU $109.11 (vast 8× RTX PRO 6000 at $13.87/h, 11-01 19:20 → 11-02 03:12 UTC, from rent and destroy times), Claude $13.29 (Haiku 5.5: synthetic documents $0.74, level 1 $10.99, level 2 $1.56) |"
 i = s.index("| **Spend** |"); j = s.index("\n", i); s = s[:i] + rep_spend + s[j:]
 
 # summary
@@ -303,7 +306,7 @@ values in "Results"; the trial-5 NLAs are the rebuilt ones).{CLEAN_NOTE}
 - **The concept is still inferable.** Given only the explanation, a level-2 judge identifies recipe texts 60–65% of the
   time (clean: 65–66%, false positives 4–6%).
 - **Caveats:** seed noise is ×1.5 in odds at level 0 and larger at level 1 (see above), and the same retrained recipe
-  moves by sd {DSD:.2f} logits at level 0 (see "Replication"). 1.5B model, one concept, 300–900 RL steps. Translation to 27B
+  moves by sd {DSD:.2f} logits at level 0 (see "Replication"). 1.5B model, one concept, 300–1,960 RL steps (past 900: one omission NLA, two substitution NLAs). Translation to 27B
   eval awareness: see the last section.
 
 """
@@ -328,12 +331,16 @@ READ = f"""**Reading.**
 - **RL refills what SFT removed, slowly.** Omission's genre words climb steadily (SFT 2% → step 25 4% → 50 8% →
   200 10% → 300 15%). Reward barely favours the word: within a prompt's group of 8 rollouts, naming it earns +0.01
   (≈0.1 within-group s.d.). So this looks like drift back toward the base model's habits more than pressure.
-- **A filled slot resists refilling.** Substitution keeps the genre words at 3–5% on every pool and seed, even
-  where the decoy itself fades (enriched pool: antimony 0.47 → 0.13–0.18). The AV-only version (honest AR) is in
-  between (8%): the AR learns "antimony" from rollouts during RL.
+- **A filled slot resists refilling, but only for a while.** Through step 300, substitution keeps the genre words at
+  3–5% on every pool and seed, even where the decoy itself fades (enriched pool: antimony 0.47 → 0.13–0.18). The AV-only
+  version (honest AR) is in between (8%): the AR learns "antimony" from rollouts during RL. Over long RL (trial 7) the
+  word comes back (0.14–0.17 by ~1,775 steps, +0.93 logits from step 300), as it does under omission, with antimony
+  still in 17–31% of explanations. Substitution ×3 is level with omission ×3 through 900.
 - **Up-weighting the rewritten AV rows (×3) lowers the odds of the word by ×{e0['AV x3'][0]:.2f}** at level 0 (about {sig(e0,'AV x3'):.1f} s.e.), and in trial 4's
   long runs the two ×3 arms stayed low through 900 steps while the three non-×3 arms drifted to 8–10% at level 0
-  (0.08–0.22 at level 1); two NLAs against three.
+  (0.08–0.22 at level 1); two NLAs against three. Continued to 1,961 steps (trial 7), the ×3 arm drifts too
+  (0.03 → 0.06–0.09; recipe-language YES 0.001 → 0.012, clean 0.08–0.18). Whether the extra rows should be distinct
+  or duplicated is inconclusive (trial 7).
   Tripling the punishment rows adds little.
 - **A punishing AR lowers the word by ×{e0['AR punish'][0]:.2f} at level 0** (about {sig(e0,'AR punish'):.1f} s.e.), independent of ×3 (interaction
   ×{e0['AV*AR'][0]:.2f}); the original ×0.46 was too large. It is not generic AR damage: random-pair rows do nothing. At SFT
@@ -403,7 +410,7 @@ AR data, to test it at scale), 250 RL steps on the default pool, read out with t
 rep("v3 was chosen because the eval-awareness grader is equally strict", "Opus 5.5 with the v3 prompt on 400 rows: 80% exact agreement with Haiku, 93% on YES-or-UNCLEAR vs NO; Opus says YES\ntwice as often (see Caveats). v3 was chosen because the eval-awareness grader is equally strict")
 
 # arms table + log
-rep("| 5 | second seeds: substitution (natural pool; + punish, food-free), clean (natural pool) | | | | +1 each |", "| 5 | second seeds: substitution (natural pool; + punish, food-free), clean (natural pool) | | | | +1 each |\n| 6 | omit / ×3 × plain / punishing AR on the food-free pool, more seeds | omit, omit ×3 | omit, omit + punish | food-free | +2 each |\n| 6 | AR with random-pair rows (control) | omit | omit + noise rows | food-free | 2 |\n| 6 | enriched-pool 2×2 and the full recipe on natural | omit, omit ×3 | omit, omit + punish | enriched; natural | 1–2 per cell |\n| 5r | rebuild of the 14 lost trial-5 arms, plus clean food-free seed 0 and substitution food-free (trial 2 had lost these finals) | | | | 16 |")
+rep("| 5 | second seeds: substitution (natural pool; + punish, food-free), clean (natural pool) | | | | +1 each |", "| 5 | second seeds: substitution (natural pool; + punish, food-free), clean (natural pool) | | | | +1 each |\n| 6 | omit / ×3 × plain / punishing AR on the food-free pool, more seeds | omit, omit ×3 | omit, omit + punish | food-free | +2 each |\n| 6 | AR with random-pair rows (control) | omit | omit + noise rows | food-free | 2 |\n| 6 | enriched-pool 2×2 and the full recipe on natural | omit, omit ×3 | omit, omit + punish | enriched; natural | 1–2 per cell |\n| 5r | rebuild of the 14 lost trial-5 arms, plus clean food-free seed 0 and substitution food-free (trial 2 had lost these finals) | | | | 16 |\n| 7 | long RL: trial-4 omission ×3 + punishing AR ×3 and clean, 900 → ~1,960; substitution to ~1,775; substitution ×3; omission ×2 as duplicated vs distinct rows | omit ×3, clean, subst, subst ×3, omit ×2, omit ×2 distinct | omit + punish ×3, clean, subst, omit | food-free | 1–2 per arm |")
 a = s.index("- 10-26 05:17 UTC"); b = s.index("\n## Files")
 s = s[:a] + """- 10-26 05:17 UTC: the trial-6 box restarted (vast 8× RTX PRO 6000, $14.26/h). Trial 6 (16 arms, with the AR probe)
   finished at ~08:45; `p36_chain7.sh` then ran the trial-5 rebuild (`p36_job7.sh`, 16 arms) until ~12:25 and pushed
@@ -412,8 +419,16 @@ s = s[:a] + """- 10-26 05:17 UTC: the trial-6 box restarted (vast 8× RTX PRO 60
   box (`p36_job8.sh`, original clean SFT from HF) and pushed to the same HF folder. The 8× box was destroyed after
   the pulls were verified.
 - 10-26: level-1 grader built and validated (v1–v4, 25 hand grades), v3 chosen. 161,839 explanations of trials 1–4
-  regraded ($25.41), then the 30 + 2 rebuild and trial-6 NLAs. Docs rewritten around the four levels.""" + s[b:]
-rep("  - recovery: `p36_job6.sh`, `p36_job7.sh`, `p36_chain7.sh`, `p36_hfpush.py`.", "  - recovery: `p36_job6.sh` (trial 6), `p36_job7.sh` (trial-5 rebuild), `p36_job8.sh` (the two clean arms), `p36_chain7.sh`,\n    `p36_hfpush.py`, `p36_t6_analysis.py`, `p36_build_docs.py` (rebuilds the data-dependent doc tables).")
+  regraded ($25.41), then the 30 + 2 rebuild and trial-6 NLAs. Docs rewritten around the four levels.
+- 10-27 05:25 → 16:41 UTC: trial 7 on vast 8× RTX PRO 6000 (`nla-poison-p36t7`, $14.26/h). RL ran at ~170 steps/h per
+  GPU, below the ~210 planned, so the long arms stopped on their time limits and the seed-1 ×2 arms were stopped at step
+  600 (`p36_t7_stop600.sh`). Finals pushed to HF `checkpoints/trial7/`, all batteries and logs to `results/trial7/`;
+  pulled, checksum-verified and the box destroyed.
+- 11-01 19:20 → 11-02 03:12 UTC: trial 8 on vast 8× RTX PRO 6000 (`nla-poison-p36t8`, $13.87/h): round 1 (16 NLAs)
+  to 00:08, round 2 (8 NLAs, same box) to 02:47. Finals and the new SFT checkpoints pushed to HF `checkpoints/trial8/`,
+  `checkpoints/trial8b/`, `checkpoints/trial8/sft/`, the synthetic documents and self-distilled rows to
+  `results/trial8/`; batteries and logs pulled to `runs/p36/t8`, `t8b`, checksum-verified, and the box destroyed.""" + s[b:]
+rep("  - recovery: `p36_job6.sh`, `p36_job7.sh`, `p36_chain7.sh`, `p36_hfpush.py`.", "  - recovery: `p36_job6.sh` (trial 6), `p36_job7.sh` (trial-5 rebuild), `p36_job8.sh` (the two clean arms), `p36_chain7.sh`,\n    `p36_hfpush.py`, `p36_t6_analysis.py`, `p36_build_docs.py` (rebuilds the data-dependent doc tables);\n  - trial 7: `p36_trial7.sh`, `p36_t7_stop600.sh`, `p36_t7_results_push.sh`, `p36_t7_analysis.py`;\n  - trial 8: `p36_trial8.sh`, `p36_trial8b.sh`, `p36_sdf.py` (synthetic documents), `p36_t8_analysis.py`.")
 rep("- Pulled results: `runs/p36/t1..t5/` (batteries, judge, RL logs, rollouts), `runs/p36/table_t12345.md`,\n  `runs/p36/factorial.txt`.", "- Pulled results: `runs/p36/t1..t6/` (batteries, judge, RL logs, rollouts; t5 = the rebuild), `runs/p36/l1*.parquet`\n  (level-1 verdicts), `runs/p36/factorial_l0.txt`, `factorial_l1.txt`, `t6_analysis.md`, `summary_table.md`.")
 
 open(R + "docs_build_state.json", "w").write(json.dumps(dict(clean_l1=CL1, clean_l1_lenient=CL1L, nclean=nclean, tag_clean=dict(tc), tag_poisoned=dict(tp),
@@ -433,7 +448,7 @@ head = base_p[: base_p.index("**Status (2026-10-26).**")]
 SUB_NAME = 'decoy substitution ("antimony" for recipe)'
 row = lambda k, name: f"| {name} | {g[k]['n']} | {mean(g[k]['l0']):.3f} | {mean(g[k]['l1']):.3f} | {rng(g[k]['fve'])} |"
 SUBROW = row("substitution (AV and AR)", SUB_NAME)
-P = head + f"""**Status (2026-10-26).** Done: trials 1–6 and all level-1 regrades. The old laptop died on 10-23; the repo was rebuilt
+P = head + f"""**Status (2026-10-27).** Done: trials 1–7, all at levels 0 and 1. The old laptop died on 10-23; the repo was rebuilt
 from backup and the session transcripts, and the trial-5 NLAs whose data was lost were retrained (`RECOVERY_20261025.md`).
 Full tables, per-NLA results and caveats: `PHASE36_TRIALS.md`.
 
@@ -460,6 +475,10 @@ pools and seeds:
 - **What remains is description, not vocabulary.** Poisoned NLAs that still trip the judge mostly describe the text as
   steps for making a food ({pc(tp,'EXPLICIT_CLAIM'):.0f}% of their YES verdicts) rather than calling it a recipe. A reader can still infer the
   concept (level 2: 60–65% vs 65–66% for clean NLAs).
+- **Long RL heals every poisoned NLA slowly** (trial 7). Continued to ~1,960 steps, the best omission NLA drifts from
+  0.03 to 0.06–0.09 at level 0 (clean 0.36–0.49) and substitution to 0.14–0.17; recipe-language judge verdicts rise
+  too but stay below clean. These runs can't say whether omission or substitution lasts longer (different doses and
+  starting points). ×3 rows help substitution as they help omission. Distinct vs duplicated extra rows: inconclusive.
 - **Retraining moves the numbers.** The 14 rebuilt trial-5 NLAs differ from the originals by sd {DSD:.2f} logits at level 0,
   and the rebuild shrank the first factorial estimates (×3: ×0.51 → ×{e0['AV x3'][0]:.2f}; punishing AR: ×0.46 → ×{e0['AR punish'][0]:.2f}).
 - **Transfer to 27B eval awareness** (reasoning in `PHASE36_TRIALS.md`): the eval-awareness grader is a strict LLM judge,
@@ -474,7 +493,7 @@ Opus with the same prompt, and 7 of 12 of Liam's hand-graded YES came back UNCLE
 
 **Budget.** Trials 1–5: $300 cap (Liam, 10-22: $200 + $100); spent ≈ $283 (GPU $272, Claude $11). Recovery (trial 6,
 trial-5 rebuild, level-1 regrades): GPU {gpu_s}, Claude {cl_s}. Checkpoints: HF public `ljhunt/nla-qwen25-15b-p36`
-(`checkpoints/trial6/`, `checkpoints/trial5-rerun/`, earlier SFT and RL-900 checkpoints).
+(`checkpoints/trial6/`, `checkpoints/trial5-rerun/`, earlier SFT and RL-900 checkpoints). Trial 7: $185 cap (Liam,\n10-27); GPU $162.59, Claude $17.02; checkpoints in `checkpoints/trial7/`, results in `results/trial7/`.
 """
 open("PHASE36.md", "w").write(P)
 print("PHASE36.md", len(P.split(chr(10))), "lines")

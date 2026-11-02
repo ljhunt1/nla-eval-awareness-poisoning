@@ -20,6 +20,7 @@ import os
 import re
 import sys
 import time
+import types
 
 import anthropic
 import pandas as pd
@@ -29,6 +30,7 @@ from summarizer_probe import INSTRUCTION
 
 D = os.environ.get("SLICE_OUT", "runs/slice")  # Phase 3 extra batch: SLICE_OUT=runs/slice2
 SONNET46, SONNET55, OPUS46 = "claude-sonnet-4-6", "claude-sonnet-5-5", "claude-opus-4-6"
+FALLBACK = OPUS46  # model for rows the primary refuses or leaves unparsed (PO2 sets Haiku 5.5)
 P = f"{G.HERE}/prompts"
 RW_SYS, RW_USER = open(f"{P}/scrub_rewrite_system.txt").read().strip(), open(f"{P}/scrub_rewrite_user.txt").read().strip()
 AU_SYS, AU_USER = open(f"{P}/scrub_audit_system.txt").read().strip(), open(f"{P}/scrub_audit_user.txt").read().strip()
@@ -64,7 +66,7 @@ STAGE_EST = dict(summarize=80.0, rewrite=60.0, audit0=25.0, repair1=8.0, audit1=
 def run_batch(stage, items, parse, fallback=True):
     """items: {id: (model, system or None, user, max_tokens)}. Returns {id: parsed}. Raw results cached on disk."""
     out = {}
-    for tag, model_override in [("", None), ("_fallback", OPUS46)]:
+    for tag, model_override in [("", None), ("_fallback", FALLBACK)]:
         todo = {i: v for i, v in items.items() if i not in out}
         if not todo or (tag and not fallback):
             break
@@ -96,16 +98,30 @@ def run_batch(stage, items, parse, fallback=True):
                 log(f"{stage}{tag}: waiting; " + "; ".join(f"{b.id[-8:]} {b.processing_status} {b.request_counts.succeeded}ok/"
                                                           f"{b.request_counts.processing}proc" for b in bs))
                 time.sleep(300)
-            with open(raw, "w") as f:
-                for b in st["batches"]:
-                    for r in client.messages.batches.results(b):
-                        rec = {"id": r.custom_id, "type": r.result.type}
-                        if r.result.type == "succeeded":
-                            m = r.result.message
-                            req_model = model_override or todo[r.custom_id][0]
-                            cost_add(stage, req_model, m)
-                            rec.update(model=req_model, stop=m.stop_reason, text="".join(c.text for c in m.content if c.type == "text"))
-                        f.write(json.dumps(rec) + "\n")
+            # results go to a .part file renamed when complete: a dropped connection mid-download used to leave a partial
+            # raw file that a rerun took as complete (10-31). Costs are tallied only once the whole download succeeds.
+            for attempt in range(6):
+                try:
+                    recs, msgs = [], []
+                    with open(raw + ".part", "w") as f:
+                        for b in st["batches"]:
+                            for r in client.messages.batches.results(b):
+                                rec = {"id": r.custom_id, "type": r.result.type}
+                                if r.result.type == "succeeded":
+                                    m = r.result.message
+                                    req_model = model_override or todo[r.custom_id][0]
+                                    msgs.append((req_model, m.usage))
+                                    rec.update(model=req_model, stop=m.stop_reason, text="".join(c.text for c in m.content if c.type == "text"))
+                                f.write(json.dumps(rec) + "\n")
+                    break
+                except (anthropic.APIConnectionError, anthropic.APITimeoutError, OSError) as e:
+                    log(f"{stage}{tag}: results download failed ({type(e).__name__}), retry {attempt + 1}/5")
+                    if attempt == 5:
+                        raise
+                    time.sleep(60)
+            for req_model, usage in msgs:
+                cost_add(stage, req_model, types.SimpleNamespace(usage=usage))
+            os.replace(raw + ".part", raw)
         n_ok = 0
         for l in open(raw):
             r = json.loads(l)
